@@ -251,17 +251,14 @@ var Bacen = {
                 if (bloqueado < ordem) {
                     var minimo = Number(prompt('Ignorar bloqueio se não ultrapassar R$', '0,00').replace(/\./g, '').replace(',', '.'));
                     if (bloqueado <= minimo) {
-                        bloqueios.forEach(function(bloqueio)
-                        {
-                            document.getElementById(bloqueio.id)
-                        });
+
                     }
                 }
                 alert(bloqueado);
                 alert(minimo);
             } else {
                 window.print();
-                history.go(-2);
+                history.go(-1);
             }
             return;
         } else {
