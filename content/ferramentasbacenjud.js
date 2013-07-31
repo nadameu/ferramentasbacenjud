@@ -245,21 +245,21 @@ var Bacen = {
      */
     getInfo: function(numproc, modo)
     {
-				var estado = 'SC';
-				switch (GM_getValue('secao')) {
-					case '70':
-						estado = 'PR';
-						break;
+        var estado = 'SC';
+        switch (GM_getValue('secao')) {
+            case '70':
+                estado = 'PR';
+                break;
 
-					case '71':
-						estado = 'RS';
-						break;
+            case '71':
+                estado = 'RS';
+                break;
 
-					case '72':
-					default:
-						estado = 'SC';
-						break;
-				}
+            case '72':
+            default:
+                estado = 'SC';
+                break;
+        }
         if (numproc.length != 10 && numproc.length != 15 && numproc.length != 20) {
             throw new Error('Número de processo inválido: ' + numproc);
         } else if (modo != 'consulta' && modo != 'preencher') {
@@ -374,9 +374,12 @@ var Bacen = {
     {
         if (method == 'incluir') {
             if (document.getElementsByClassName('fundoPadraoAClaro2').length) {
-                if (confirm(document.getElementsByClassName('fundoPadraoAClaro2')[0].rows[0].cells[0].textContent.split(/\n/)[2] + '\n\nDeseja incluir nova minuta?')) {
-                    location.href = 'https://www3.bcb.gov.br/bacenjud2/criarMinutaBVInclusao.do?method=criar';
-                }
+                window.setTimeout(function()
+                {
+                    if (window.confirm(document.getElementsByClassName('fundoPadraoAClaro2')[0].rows[0].cells[0].textContent.split(/\n/)[2] + '\n\nDeseja incluir nova minuta?')) {
+                        location.href = 'https://www3.bcb.gov.br/bacenjud2/criarMinutaBVInclusao.do?method=criar';
+                    }
+                }, 0);
             }
         } else {
             throw new Error('Método desconhecido: ' + method);
@@ -389,8 +392,8 @@ var Bacen = {
      */
     init: function()
     {
-        this.pagina = location.pathname.split('/bacenjud2/')[1].split('.')[0];
-        var parametros = location.search.split('?');
+        this.pagina = window.location.pathname.split('/bacenjud2/')[1].split('.')[0];
+        var parametros = window.location.search.split('?');
         if (parametros.length == 2) {
             parametros = parametros[1].split('&');
             var self = this;
@@ -570,7 +573,7 @@ var Bacen = {
             } else if (document.getElementsByClassName('pagebanner').length) {
                 var registros = document.getElementsByClassName('pagebanner')[0].textContent.match(/^\d+/);
                 if (registros == 1) {
-                    location.href = document.getElementById('ordem').rows[1].cells[3].getElementsByTagName('a')[0].href;
+                    window.location.href = document.getElementById('ordem').rows[1].cells[3].getElementsByTagName('a')[0].href;
                 }
             }
         } else {
@@ -703,3 +706,4 @@ var Bacen = {
 // {{{ Execução
 Bacen.init();
 // }}}
+// vim:ts=4 sts=4 sw=4 et
