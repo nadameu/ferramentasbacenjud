@@ -117,6 +117,29 @@ var Bacen = {
         }
     },
     // }}}
+    // {{{ conferirDadosMinutaSIInclusao()
+    /**
+     * Menu Minutas -> Incluir Minuta de Requisição de Informações -> Conferir dados da Minuta
+     *
+     * @param String Método utilizado pela página
+     */
+    conferirDadosMinutaSIInclusao: function(method)
+    {
+        this.conferirDadosMinutaBVInclusao(method);
+    },
+    // }}}
+    // {{{ consultarPessoa()
+    /**
+     * Janela pop-up aberta ao adicionar pessoa na tela de inclusão de minuta
+     * de requisição de informações
+     *
+     * @param String Método utilizado
+     */
+    consultarPessoa: function(method)
+    {
+        this.consultarReu(method);
+    },
+    // }}}
     // {{{ consultarSolicitacoesProtocoladasJuizo()
     /**
      * Menu Ordens judiciais -> Consultar Ordens Judiciais por Juízo
@@ -130,7 +153,7 @@ var Bacen = {
                 $F('codigoVara').value = GM_getValue('vara');
             }
             if ($F('operador')) {
-                $F('operador').value = $$('table')[1].getElementsByTagName('div')[0].textContent.split('.')[1];
+                $F('operador').value = GM_getValue('juiz');
             }
         } else {
             throw new Error('Método desconhecido: ' + method);
@@ -374,16 +397,32 @@ var Bacen = {
     {
         if (method == 'incluir') {
             if (document.getElementsByClassName('fundoPadraoAClaro2').length) {
+                var estaPagina = this.pagina;
                 window.setTimeout(function()
                 {
                     if (window.confirm(document.getElementsByClassName('fundoPadraoAClaro2')[0].rows[0].cells[0].textContent.split(/\n/)[2] + '\n\nDeseja incluir nova minuta?')) {
-                        location.href = 'https://www3.bcb.gov.br/bacenjud2/criarMinutaBVInclusao.do?method=criar';
+                        if (estaPagina == 'incluirMinutaBV') {
+                            window.location.href = 'criarMinutaBVInclusao.do?method=criar';
+                        } else if (estaPagina == 'incluirMinutaSI') {
+                            window.location.href = 'criarMinutaSIInclusao.do?method=criar';
+                        }
                     }
                 }, 0);
             }
         } else {
             throw new Error('Método desconhecido: ' + method);
         }
+    },
+    // }}}
+    // {{{ incluirMinutaSI()
+    /**
+     * Minuta conferida e incluída
+     *
+     * @param String Método
+     */
+    incluirMinutaSI: function(method)
+    {
+        this.incluirMinutaBV(method);
     },
     // }}}
     // {{{ init()
@@ -476,7 +515,6 @@ var Bacen = {
     {
         var valor = input.value.toString();
         var protocolo = this.getProtocolo(valor);
-        GM_log(protocolo);
         if (valor && protocolo) {
             input.value = protocolo;
             this.valid = true;
@@ -506,7 +544,13 @@ var Bacen = {
         {
             reu.selected = true;
         });
-        if (reus.length) unsafeWindow.excluirReu();
+        if (reus.length) {
+            if (this.pagina == 'criarMinutaBVInclusao') {
+                unsafeWindow.excluirReu();
+            } else if (this.pagina == 'criarMinutaSIInclusao') {
+                unsafeWindow.excluirPessoa();
+            }
+        }
         if (valor) {
             input.value = 'Carregando...';
             var numproc = this.getNumproc(valor);
@@ -642,7 +686,7 @@ var Bacen = {
                     if (processo.querySelector('CodClasse').textContent == '000099') {
                         $F('idTipoAcao').value = 4;
                     }
-                    if (processo.querySelector('ValCausa')) {
+                    if ($F('valorUnico') && processo.querySelector('ValCausa')) {
                         var valorCausa = Number(processo.querySelector('ValCausa').textContent);
                         if (! isNaN(valorCausa)) {
                             $F('valorUnico').value = ((0|(valorCausa * 100)) / 100).toString().replace(/\./g, ',');
