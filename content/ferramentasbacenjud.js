@@ -207,7 +207,7 @@ var Bacen = {
     criarMinutaBVInclusao: function(method)
     {
         if (method == 'criar') {
-            if ($F('cdOperadorJuiz')) {
+            if ($F('cdOperadorJuiz') && $F('cdOperadorJuiz').type != 'hidden') {
                 $F('cdOperadorJuiz').setAttribute('value', this.juiz);
             }
             if ($F('codigoVara') && $F('processo')) {
