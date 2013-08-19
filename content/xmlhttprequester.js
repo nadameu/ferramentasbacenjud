@@ -65,9 +65,9 @@ ferramentasbacenjud_xmlhttpRequester.prototype.chromeStartRequest=function(safeU
 // method by the same name which is a property of 'details' in the content
 // window's security context.
 ferramentasbacenjud_xmlhttpRequester.prototype.setupRequestEvent =
-function(unsafeContentWin, req, event, details) {
-    if (details[event]) {
-        req[event] = function() {
+function(unsafeContentWin, req, xhrEvent, details) {
+    if (details[xhrEvent]) {
+        req[xhrEvent] = function() {
             var responseState = {
                 // can't support responseXML because security won't
                 // let the browser call properties on it
@@ -78,12 +78,12 @@ function(unsafeContentWin, req, event, details) {
                 statusText:(req.readyState==4?req.statusText:'')
             }
 
-            // Pop back onto browser thread and call event handler.
+            // Pop back onto browser thread and call xhrEvent handler.
             // Have to use nested function here instead of GM_hitch because
-            // otherwise details[event].apply can point to window.setTimeout, which
+            // otherwise details[xhrEvent].apply can point to window.setTimeout, which
             // can be abused to get increased priveledges.
             new XPCNativeWrapper(unsafeContentWin, "setTimeout()")
-                .setTimeout(function(){details[event](responseState);}, 0);
+                .setTimeout(function(){details[xhrEvent](responseState);}, 0);
         }
     }
 }
