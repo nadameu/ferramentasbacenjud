@@ -1,5 +1,5 @@
 function ferramentasbacenjud_PrefManager() {
-    var startPoint="ferramentasbacenjud.";
+    var startPoint="extensions.bacen@nadameu.com.br.";
 
     var pref=Components.classes["@mozilla.org/preferences-service;1"].
         getService(Components.interfaces.nsIPrefService).

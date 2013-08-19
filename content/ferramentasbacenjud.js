@@ -63,7 +63,7 @@ var Bacen = {
     /**
      * Código da vara/juízo
      */
-    vara: '2379',
+    vara: GM_getValue('vara'),
     // }}}
     // {{{ bind()
     /**
@@ -310,7 +310,9 @@ var Bacen = {
      */
     getNumproc: function(numproc)
     {
-        var secao_antiga = '50', secao = '72', subsecao = '08', ramo = '4', tribunal = '04';
+        secao = GM_getValue('secao'),
+        subsecao = GM_getValue('subsecao'),
+        ramo = '4', tribunal = '04';
         numproc = numproc.replace(/[^0-9\/]/g, '');
         if (/^(\d{2}|\d{4})\/\d{2,9}$/.test(numproc)) {
             var tmp = numproc.split('/');
