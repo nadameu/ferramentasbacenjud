@@ -3,7 +3,7 @@
 	<Description about="urn:mozilla:install-manifest">
 		<em:id>bacen@nadameu.com.br</em:id>
 		<em:name>Ferramentas BacenJud</em:name>
-		<em:version>0.2</em:version>
+		<em:version>0.3.1beta1</em:version>
 		<em:description>Melhorias ao sistema BacenJud 2.0</em:description>
         <em:creator>Paulo Roberto Maurici Junior &lt;pmj@jfsc.gov.br&gt;</em:creator>
 		<em:contributor>Greasemonkey Compiler by Anthony Lieuallen;</em:contributor>
