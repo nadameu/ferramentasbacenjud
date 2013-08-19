@@ -98,8 +98,19 @@ var Bacen = {
                 });
                 window.alert(msgErro);
                 window.history.go(-1);
-            } else if ($F('senhaJuiz')) {
+            } else if ($F('senhaJuiz') && (! $F('senhaJuiz').disabled)) {
                 $F('senhaJuiz').focus();
+            } else if ($F('btnIncluir')) {
+                window.addEventListener('keypress', function(e)
+                {
+                    if (e.keyCode == 13) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        var evento = document.createEvent('MouseEvents');
+                        evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+                        $F('btnIncluir').dispatchEvent(evento);
+                    }
+                }, true);
             }
         } else {
             throw new Error('Método desconhecido: ' + method);
