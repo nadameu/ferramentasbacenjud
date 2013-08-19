@@ -655,6 +655,10 @@ var Bacen = {
             $('cpfCnpj').value = documento;
             $('botaoIncluirCpfCnpj').disabled = false;
             $('botaoIncluirCpfCnpj').focus();
+            (function(window)
+            {
+                window.abreConsultarCpfCnpjPopUp();
+            })(unsafeWindow);
         } else if ($F('idTipoAcao') && $F('idTipoAcao').value == '') {
             $F('idTipoAcao').focus();
         } else if ($F('valorUnico')) {
