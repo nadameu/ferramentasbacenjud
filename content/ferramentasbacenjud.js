@@ -60,14 +60,6 @@ var Bacen = {
      * Página sendo exibida
      */
     pagina: '',
-    /**
-     * Código da vara/juízo
-     */
-    vara: GM_getValue('vara'),
-    /**
-     * Login do juiz padrão
-     */
-    juiz: GM_getValue('juiz'),
     // }}}
     // {{{ bind()
     /**
@@ -124,7 +116,7 @@ var Bacen = {
     {
         if (method == 'editarCriteriosConsultaPorVara') {
             if ($F('codigoVara')) {
-                $F('codigoVara').value = this.vara;
+                $F('codigoVara').value = GM_getValue('vara');
             }
             if ($F('operador')) {
                 $F('operador').value = $$('table')[1].getElementsByTagName('div')[0].textContent.split('.')[1];
@@ -208,10 +200,10 @@ var Bacen = {
     {
         if (method == 'criar') {
             if ($F('cdOperadorJuiz') && $F('cdOperadorJuiz').type != 'hidden') {
-                $F('cdOperadorJuiz').setAttribute('value', this.juiz);
+                $F('cdOperadorJuiz').setAttribute('value', GM_getValue('juiz'));
             }
             if ($F('codigoVara') && $F('processo')) {
-                $F('codigoVara').setAttribute('value', this.vara);
+                $F('codigoVara').setAttribute('value', GM_getValue('vara'));
                 $F('processo').select();
                 $F('processo').focus();
                 $F('processo').addEventListener('change', this.bind(this.onProcessoChange), true);
