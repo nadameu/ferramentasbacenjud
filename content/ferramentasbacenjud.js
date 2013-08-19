@@ -226,46 +226,6 @@ var Bacen = {
         this.criarMinutaBVInclusao(method);
     },        
     // }}}
-    // {{{ exibirOrdemBloqueioValor()
-    /**
-     * Detalhamento de Ordem Judicial de Bloqueio de Valores
-     *
-     * @param String Método utilizado pela página
-     */
-    exibirOrdemBloqueioValor: function(method)
-    {
-        if (method == 'exibir') {
-            var ordem, bloqueios = [], bloqueado = 0;
-            $A(document.getElementsByTagName('input')).forEach(function(input, i, inputs)
-            {
-                if (input.id.match(/^valor\d+$/)) {
-                    var infoRow = input.parentNode.parentNode;
-                    infoRow = infoRow.parentNode.rows[infoRow.rowIndex - 1];
-                    ordem = Number(infoRow.cells[3].textContent.replace(/\./g, '').replace(',', '.'));
-                    var valor = Number(infoRow.cells[5].textContent.replace(/\./g, '').replace(',', '.'));
-                    bloqueado += valor;
-                    bloqueios.push({id: input.id, valor: valor});
-                }
-            });
-            if (bloqueios.length > 0) {
-                if (bloqueado < ordem) {
-                    var minimo = Number(prompt('Ignorar bloqueio se não ultrapassar R$', '0,00').replace(/\./g, '').replace(',', '.'));
-                    if (bloqueado <= minimo) {
-
-                    }
-                }
-                alert(bloqueado);
-                alert(minimo);
-            } else {
-                window.print();
-                history.go(-1);
-            }
-            return;
-        } else {
-            throw new Error('Método desconhecido: ' + method);
-        }
-    },
-    // }}}
     // {{{ getInfo()
     /**
      * Obtém informações do processo e preenche automaticamente os campos
