@@ -628,6 +628,12 @@ var Bacen = {
                     if (processo.querySelector('CodClasse').textContent == '000099') {
                         $F('idTipoAcao').value = 4;
                     }
+                    if (processo.querySelector('ValCausa')) {
+                        var valorCausa = Number(processo.querySelector('ValCausa').textContent);
+                        if (! isNaN(valorCausa)) {
+                            $F('valorUnico').value = ((0|(valorCausa * 100)) / 100).toString().replace(/\./g, ',');
+                        }
+                    }
                     var reus = [];
                     Array.prototype.slice.call(processo.querySelectorAll('Partes Parte')).forEach(function(parte) {
                         if (parte.querySelectorAll('Autor').length && parte.querySelector('Autor').textContent == 'S') {
@@ -676,6 +682,7 @@ var Bacen = {
         } else if ($F('idTipoAcao') && $F('idTipoAcao').value == '') {
             $F('idTipoAcao').focus();
         } else if ($F('valorUnico')) {
+            $F('valorUnico').select();
             $F('valorUnico').focus();
         }
     },
