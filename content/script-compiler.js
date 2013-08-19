@@ -55,14 +55,15 @@ contentLoad: function(e) {
         && ( /https:\/\/www3\.bcb\.gov\.br\/bacenjud2\/.*/.test(href) )
         && true
     ) {
+        var scriptPath = 'chrome://ferramentasbacenjud/content/ferramentasbacenjud.js';
         var script=ferramentasbacenjud_gmCompiler.getUrlContents(
-            'chrome://ferramentasbacenjud/content/ferramentasbacenjud.js'
+            scriptPath
         );
-        ferramentasbacenjud_gmCompiler.injectScript(script, href, unsafeWin);
+        ferramentasbacenjud_gmCompiler.injectScript(script, href, unsafeWin, scriptPath);
     }
 },
 
-injectScript: function(script, url, unsafeContentWin) {
+injectScript: function(script, url, unsafeContentWin, scriptPath) {
     var sandbox, script, logger, storage, xmlhttpRequester;
     var safeWin=new XPCNativeWrapper(unsafeContentWin);
 
@@ -107,8 +108,8 @@ injectScript: function(script, url, unsafeContentWin) {
             sandbox);
     } catch (e) {
         var e2=new Error(typeof e=="string" ? e : e.message);
-        e2.fileName=script.filename;
-        e2.lineNumber=0;
+        e2.fileName=scriptPath;
+        e2.lineNumber=(typeof e=="string" ? 0 : e.lineNumber);
         //GM_logError(e2);
         throw e2;
     }

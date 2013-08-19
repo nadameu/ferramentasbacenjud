@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-    <setting pref="extensions.bacen@nadameu.com.br.vara" type="string" title="Código da Vara/Juízo no BACENJUD" />
+  <setting pref="extensions.bacen@nadameu.com.br.juiz" type="string" title="Login de Juiz a utilizar como padrão" />
+  <setting pref="extensions.bacen@nadameu.com.br.vara" type="string" title="Código da Vara/Juízo no BACENJUD" />
   <setting pref="extensions.bacen@nadameu.com.br.secao" type="string" title="Código da Seção (ex.: 0000001-00.2011.404.XX08)" />
   <setting pref="extensions.bacen@nadameu.com.br.subsecao" type="string" title="Código da Subseção (ex.: 0000001-00.2011.404.72XX)" />
 </vbox>

@@ -64,6 +64,10 @@ var Bacen = {
      * Código da vara/juízo
      */
     vara: GM_getValue('vara'),
+    /**
+     * Login do juiz padrão
+     */
+    juiz: GM_getValue('juiz'),
     // }}}
     // {{{ bind()
     /**
@@ -100,8 +104,8 @@ var Bacen = {
                     erro.innerHTML = erro.innerHTML.replace(/\n?•(\&nbsp;)?/g, '').replace('<b>', '&ldquo;').replace('</b>', '&rdquo;');
                     msgErro += erro.textContent + '\n';
                 });
-                alert(msgErro);
-                history.go(-1);
+                window.alert(msgErro);
+                window.history.go(-1);
             } else if ($F('senhaJuiz')) {
                 $F('senhaJuiz').focus();
             }
@@ -203,6 +207,9 @@ var Bacen = {
     criarMinutaBVInclusao: function(method)
     {
         if (method == 'criar') {
+            if ($F('cdOperadorJuiz')) {
+                $F('cdOperadorJuiz').setAttribute('value', this.juiz);
+            }
             if ($F('codigoVara') && $F('processo')) {
                 $F('codigoVara').setAttribute('value', this.vara);
                 $F('processo').select();
@@ -442,7 +449,7 @@ var Bacen = {
                 this.valid = true;
             } else {
                 this.valid = false;
-                alert('Número de processo inválido: "' + valor + '".');
+                window.alert('Número de processo inválido: "' + valor + '".');
                 window.setTimeout(function() {
                     input.value = valor;
                     input.select();
@@ -469,7 +476,7 @@ var Bacen = {
             this.valid = true;
         } else if (valor) {
             this.valid = false;
-            alert('Número de protocolo inválido: "' + valor + '".');
+            window.alert('Número de protocolo inválido: "' + valor + '".');
             window.setTimeout(function() {
                 input.select();
                 input.focus();
@@ -503,7 +510,7 @@ var Bacen = {
                 }
                 this.getInfo(numproc, 'preencher');
             } else {
-                alert('Número de processo inválido: "' + valor + '".');
+                window.alert('Número de processo inválido: "' + valor + '".');
                 window.setTimeout(function() {
                     input.value = valor;
                     input.select();
@@ -555,7 +562,7 @@ var Bacen = {
                     erro.innerHTML = erro.innerHTML.replace(/\n?•(\&nbsp;)?/g, '').replace('<b>', '&ldquo;').replace('</b>', '&rdquo;');
                     msgErro += erro.textContent + '\n';
                 });
-                alert(msgErro);
+                window.alert(msgErro);
                 history.go(-1);
             } else if (document.getElementsByClassName('pagebanner').length) {
                 var registros = document.getElementsByClassName('pagebanner')[0].textContent.match(/^\d+/);
@@ -584,7 +591,7 @@ var Bacen = {
                     erro.innerHTML = erro.innerHTML.replace(/\n?•(\&nbsp;)?/g, '').replace('<b>', '&ldquo;').replace('</b>', '&rdquo;');
                     msgErro += erro.textContent + '\n';
                 });
-                alert(msgErro);
+                window.alert(msgErro);
                 history.go(-1);
             }
         } else {
@@ -616,7 +623,7 @@ var Bacen = {
         if ($F(el)) {
             if (erros.length) {
                 this.valid = false;
-                alert(erros.join('\n'));
+                window.alert(erros.join('\n'));
                 $F(el).value = this.buscando.valor;
                 delete this.buscando;
                 $F(el).select();
@@ -686,4 +693,3 @@ var Bacen = {
 // {{{ Execução
 Bacen.init();
 // }}}
-// vim:enc=utf-8
