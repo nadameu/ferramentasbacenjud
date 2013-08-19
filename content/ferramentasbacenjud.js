@@ -235,6 +235,21 @@ var Bacen = {
      */
     getInfo: function(numproc, modo)
     {
+				var estado = 'SC';
+				switch (GM_getValue('secao')) {
+					case '70':
+						estado = 'PR';
+						break;
+
+					case '71':
+						estado = 'RS';
+						break;
+
+					case '72':
+					default:
+						estado = 'SC';
+						break;
+				}
         if (numproc.length != 10 && numproc.length != 15 && numproc.length != 20) {
             throw new Error('Número de processo inválido: ' + numproc);
         } else if (modo != 'consulta' && modo != 'preencher') {
@@ -249,7 +264,7 @@ var Bacen = {
                 + '<SOAP-ENV:Body>'
                 + '<ns1:ws_consulta_processo>'
                 + '<num_proc xsi:type="xsd:string">' + numproc + '</num_proc>'
-                + '<uf xsi:type="xsd:string">SC</uf>'
+                + '<uf xsi:type="xsd:string">' + estado + '</uf>'
                 + '<todas_fases xsi:type="xsd:string">N</todas_fases>'
                 + '<todas_partes xsi:type="xsd:string">' + todas_partes + '</todas_partes>'
                 + '<todos_valores>N</todos_valores>'
