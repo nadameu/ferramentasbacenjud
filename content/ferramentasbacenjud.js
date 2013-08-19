@@ -284,7 +284,18 @@ var Bacen = {
         var options = {
             method: 'POST',
             url: 'http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php',
-            data: '<?xml version="1.0" encoding="UTF-8"?>' + <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="urn:consulta_processual" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><ns1:ws_consulta_processo><num_proc xsi:type="xsd:string">{numproc}</num_proc><uf xsi:type="xsd:string">SC</uf><todas_fases xsi:type="xsd:string">N</todas_fases><todas_partes xsi:type="xsd:string">{todas_partes}</todas_partes><todos_valores>N</todos_valores></ns1:ws_consulta_processo></SOAP-ENV:Body></SOAP-ENV:Envelope>.toString(),
+            data: '<?xml version="1.0" encoding="UTF-8"?>'
+                + '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="urn:consulta_processual" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
+                + '<SOAP-ENV:Body>'
+                + '<ns1:ws_consulta_processo>'
+                + '<num_proc xsi:type="xsd:string">' + numproc + '</num_proc>'
+                + '<uf xsi:type="xsd:string">SC</uf>'
+                + '<todas_fases xsi:type="xsd:string">N</todas_fases>'
+                + '<todas_partes xsi:type="xsd:string">' + todas_partes + '</todas_partes>'
+                + '<todos_valores>N</todos_valores>'
+                + '</ns1:ws_consulta_processo>'
+                + '</SOAP-ENV:Body>'
+                + '</SOAP-ENV:Envelope>',
             onload: this.bind(this.preencher, modo),
         }
         GM_xmlhttpRequest(options);
@@ -617,13 +628,13 @@ var Bacen = {
         if (modo != 'preencher' && modo != 'consulta') {
             throw new Error('Modo inválido: ' + modo);
         }
-        var div = document.createElement('div');
-        div.innerHTML = obj.responseText;
-        var processo = eval(div.getElementsByTagName('return')[0].textContent.replace(/<\?xml[^\?]*\?>/, ''));
+        var parser = new DOMParser();
+        var ret = parser.parseFromString(obj.responseText, 'text/xml').querySelector('return').textContent;
+        var processo = parser.parseFromString(ret, 'text/xml');
         var erros = [];
-        for (var erro in processo.Erro) {
-            erros.push(processo.Erro[erro]);
-        }
+        Array.prototype.slice.call(processo.querySelectorAll('Erro')).forEach(function(erro) {
+            erros.push(erro.textContent);
+        });
         var el = (modo == 'preencher' ? 'processo' : 'numeroProcesso');
         if ($F(el)) {
             if (erros.length) {
@@ -636,21 +647,20 @@ var Bacen = {
             } else {
                 this.valid = true;
                 delete this.buscando;
-                $F(el).value = processo.Processo.toString().replace(/[^0-9]/g, '');
+                $F(el).value = processo.querySelector('Processo Processo').textContent.replace(/[^0-9]/g, '');
                 if (modo == 'preencher') {
-                    if (processo.CodClasse == '000099') {
+                    if (processo.querySelector('CodClasse').textContent == '000099') {
                         $F('idTipoAcao').value = 4;
                     }
                     var reus = [];
-                    for (var p in processo.Partes.Parte) {
-                        var parte = processo.Partes.Parte[p];
-                        if (parte.Autor == 'S') {
-                            $F('nomeAutor').value = parte.Nome;
-                            $F('cpfCnpjAutor').value = parte.CPF_CGC;
-                        } else if (parte.Réu == 'S' || parte.Reu == 'S') {
-                            reus.push(parte.CPF_CGC);
+                    Array.prototype.slice.call(processo.querySelectorAll('Partes Parte')).forEach(function(parte) {
+                        if (parte.querySelectorAll('Autor').length && parte.querySelector('Autor').textContent == 'S') {
+                            $F('nomeAutor').value = parte.querySelector('Nome').textContent;
+                            $F('cpfCnpjAutor').value = parte.querySelector('CPF_CGC').textContent;
+                        } else if ((parte.querySelectorAll('Réu').length && parte.querySelector('Réu').textContent == 'S') || (parte.querySelectorAll('Reu').length && parte.querySelector('Reu').textContent == 'S')) {
+                            reus.push(parte.querySelector('CPF_CGC').textContent);
                         }
-                    }
+                    });
                     this.processaLista(reus);
                 } else if (modo == 'consulta') {
                     if (this.submit) {
@@ -678,9 +688,11 @@ var Bacen = {
             unsafeWindow.Bacen = this;
         }
         if (this.reus.length) {
-            $('cpfCnpj').value = this.reus[0];
+            var documento = this.reus[0].toString();
             this.reus.splice(0, 1);
-            unsafeWindow.abreConsultarCpfCnpjPopUp();
+            $('cpfCnpj').value = documento;
+            $('botaoIncluirCpfCnpj').disabled = false;
+            $('botaoIncluirCpfCnpj').focus();
         } else if ($F('idTipoAcao') && $F('idTipoAcao').value == '') {
             $F('idTipoAcao').focus();
         } else if ($F('valorUnico')) {

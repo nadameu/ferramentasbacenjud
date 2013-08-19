@@ -69,6 +69,13 @@ function(unsafeContentWin, req, xhrEvent, details) {
     if (details[xhrEvent]) {
         req[xhrEvent] = function() {
             var responseState = {
+                __exposedProps__: {
+                  responseText: 'r',
+                  readyState: 'r',
+                  responseHeaders: 'r',
+                  status: 'r',
+                  statusText: 'r'
+                },
                 // can't support responseXML because security won't
                 // let the browser call properties on it
                 responseText:req.responseText,

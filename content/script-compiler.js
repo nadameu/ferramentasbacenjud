@@ -110,7 +110,7 @@ injectScript: function(script, url, unsafeContentWin) {
         e2.fileName=script.filename;
         e2.lineNumber=0;
         //GM_logError(e2);
-        alert(e2);
+        throw e2;
     }
 },
 
