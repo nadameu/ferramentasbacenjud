@@ -762,7 +762,9 @@ var Bacen = {
             $('botaoIncluirCpfCnpj').focus();
             (function(window)
             {
-                window.abreConsultarCpfCnpjPopUp();
+                var evento = document.createEvent('MouseEvents');
+                evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+                $('botaoIncluirCpfCnpj').dispatchEvent(evento);
             })(unsafeWindow);
         } else if ($F('idTipoAcao') && $F('idTipoAcao').value == '') {
             $F('idTipoAcao').focus();
