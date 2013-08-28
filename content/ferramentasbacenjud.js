@@ -46,6 +46,33 @@ var $F = function(name)
     return document.getElementsByName(name)[0];
 }
 // }}}
+// {{{ formatNumber()
+/**
+ * Retorna uma string com o número no formato português brasileiro
+ *
+ * @param Number Número a ser formatado
+ * @return String Número formatado
+ */
+var formatNumber = function(num)
+{
+    if (isNaN(num)) return '';
+    var arrDigitos = Array.prototype.slice.call((0|(num * 100)).toString()), numFormatado = '';
+    while (arrDigitos.length < 3) {
+        arrDigitos.unshift('0');
+    }
+    for (var i = 0, last = arrDigitos.length - 1; i <= last; i += 1) {
+        numFormatado += arrDigitos[i];
+        if ((last - i) % 3 == 2) {
+            if ((last - i) == 2) {
+                numFormatado += ',';
+            } else if (arrDigitos[i] != '-') {
+                numFormatado += '.';
+            }
+        }
+    }
+    return numFormatado;
+}
+// }}}
 // {{{ Bacen
 /**
  * Objeto principal do programa
@@ -689,7 +716,7 @@ var Bacen = {
                     if ($F('valorUnico') && processo.querySelector('ValCausa')) {
                         var valorCausa = Number(processo.querySelector('ValCausa').textContent);
                         if (! isNaN(valorCausa)) {
-                            $F('valorUnico').value = ((0|(valorCausa * 100)) / 100).toString().replace(/\./g, ',');
+                            $F('valorUnico').value = formatNumber(valorCausa);
                         }
                     }
                     var reus = [];
