@@ -238,7 +238,7 @@ var Bacen = {
         if (method == 'consultarReu') {
             window.addEventListener('unload', function(e)
             {
-                opener.setTimeout("Bacen.processaLista();", 100);
+                opener.setTimeout("processaLista();", 100);
             }, true);
             window.addEventListener('keypress', function(e)
             {
@@ -573,9 +573,9 @@ var Bacen = {
         });
         if (reus.length) {
             if (this.pagina == 'criarMinutaBVInclusao') {
-                unsafeWindow.excluirReu();
+                window.wrappedJSObject.excluirReu();
             } else if (this.pagina == 'criarMinutaSIInclusao') {
-                unsafeWindow.excluirPessoa();
+                window.wrappedJSObject.excluirPessoa();
             }
         }
         if (valor) {
@@ -752,7 +752,9 @@ var Bacen = {
     {
         if (arguments.length) {
             this.reus = arguments[0];
-            unsafeWindow.Bacen = this;
+            window.wrappedJSObject.processaLista = function() {
+                Bacen.processaLista.apply(Bacen, []);
+            };
         }
         if (this.reus.length) {
             var documento = this.reus[0].toString();
@@ -765,7 +767,7 @@ var Bacen = {
                 var evento = document.createEvent('MouseEvents');
                 evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
                 $('botaoIncluirCpfCnpj').dispatchEvent(evento);
-            })(unsafeWindow);
+            })(window.wrappedJSObject);
         } else if ($F('idTipoAcao') && $F('idTipoAcao').value == '') {
             $F('idTipoAcao').focus();
         } else if ($F('valorUnico')) {

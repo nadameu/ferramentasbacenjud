@@ -12,6 +12,7 @@ function ferramentasbacenjud_xmlhttpRequester(unsafeContentWin, chromeWindow) {
 // can't support mimetype because i think it's only used for forcing
 // text/xml and we can't support that
 ferramentasbacenjud_xmlhttpRequester.prototype.contentStartRequest = function(details) {
+    if ('wrappedJSObject' in details) details = details.wrappedJSObject;
     // important to store this locally so that content cannot trick us up with
     // a fancy getter that checks the number of times it has been accessed,
     // returning a dangerous URL the time that we actually use it.
