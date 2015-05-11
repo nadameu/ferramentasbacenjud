@@ -238,7 +238,7 @@ var Bacen = {
         if (method == 'consultarReu') {
             window.addEventListener('unload', function(e)
             {
-                opener.setTimeout("processaLista();", 100);
+                window.opener.setTimeout("processaLista();", 100);
             }, true);
             window.addEventListener('keypress', function(e)
             {
