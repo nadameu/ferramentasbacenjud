@@ -710,7 +710,9 @@ var Bacen = {
                 delete this.buscando;
                 $F(el).value = processo.querySelector('Processo Processo').textContent.replace(/[^0-9]/g, '');
                 if (modo == 'preencher') {
-                    if (processo.querySelector('CodClasse').textContent == '000099') {
+                    if (processo.querySelector('CodClasse').textContent == '000229' || processo.querySelector('CodClasse').textContent == '000098') {
+                        $F('idTipoAcao').value = 1;
+                    } else if (processo.querySelector('CodClasse').textContent == '000099') {
                         $F('idTipoAcao').value = 4;
                     }
                     if ($F('valorUnico') && processo.querySelector('ValCausa')) {
