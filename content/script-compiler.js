@@ -1,3 +1,6 @@
+Components.utils.import('chrome://ferramentasbacenjud/content/xmlhttprequester.js');
+Components.utils.import('chrome://ferramentasbacenjud/content/hitch.js');
+
 var ferramentasbacenjud_gmCompiler={
 
 // getUrlContents adapted from Greasemonkey Compiler
@@ -69,9 +72,9 @@ injectScript: function(script, url, unsafeContentWin, scriptPath) {
 
     sandbox=new Components.utils.Sandbox(safeWin);
 
-    var storage=new ferramentasbacenjud_ScriptStorage();
-    xmlhttpRequester=new ferramentasbacenjud_xmlhttpRequester(
-        unsafeContentWin, window//appSvc.hiddenDOMWindow
+    var storage=new ferramentasbacenjud_PrefManager();
+    xmlhttpRequester=new GM_xmlhttpRequester(
+        safeWin, url, sandbox
     );
 
     sandbox.window=safeWin;
@@ -82,24 +85,17 @@ injectScript: function(script, url, unsafeContentWin, scriptPath) {
     sandbox.XPathResult=Components.interfaces.nsIDOMXPathResult;
 
     // add our own APIs
-    sandbox.GM_addStyle=function(css) { ferramentasbacenjud_gmCompiler.addStyle(sandbox.document, css) };
-    sandbox.GM_setValue=ferramentasbacenjud_gmCompiler.hitch(storage, "setValue");
-    sandbox.GM_getValue=ferramentasbacenjud_gmCompiler.hitch(storage, "getValue");
-    sandbox.GM_openInTab=ferramentasbacenjud_gmCompiler.hitch(this, "openInTab", unsafeContentWin);
-    sandbox.GM_xmlhttpRequest=ferramentasbacenjud_gmCompiler.hitch(
-        xmlhttpRequester, "contentStartRequest"
-    );
+    sandbox.GM_addStyle=hitch(this, "addStyle", sandbox.document);
+    sandbox.GM_setValue=hitch(storage, "setValue");
+    sandbox.GM_getValue=hitch(storage, "getValue");
+    sandbox.GM_openInTab=hitch(this, "openInTab", unsafeContentWin);
+    sandbox.GM_xmlhttpRequest=hitch(xmlhttpRequester, "contentStartRequest");
     //unsupported
     sandbox.GM_registerMenuCommand=function(){};
-    sandbox.GM_log=function(message){
-        var aConsoleService = Components.classes["@mozilla.org/consoleservice;1"].
-        getService(Components.interfaces.nsIConsoleService);
-        aConsoleService.logStringMessage(message);
-    };
+    Components.utils.import("resource://gre/modules/devtools/Console.jsm");
+    sandbox.GM_log=hitch(console, "log");
     sandbox.GM_getResourceURL=function(){};
     sandbox.GM_getResourceText=function(){};
-
-    sandbox.__proto__=sandbox.window;
 
     try {
         this.evalInSandbox(
@@ -150,62 +146,6 @@ openInTab: function(unsafeContentWin, url) {
      tabBrowser.loadOneTab(url, referrer, null, null, loadInBackground);
  },
  
- hitch: function(obj, meth) {
-    var unsafeTop = new XPCNativeWrapper(unsafeContentWin, "top").top;
-
-    for (var i = 0; i < this.browserWindows.length; i++) {
-        this.browserWindows[i].openInTab(unsafeTop, url);
-    }
-},
-
-apiLeakCheck: function(allowedCaller) {
-    var stack=Components.stack;
-
-    var leaked=false;
-    do {
-        if (2==stack.language) {
-            if ('chrome'!=stack.filename.substr(0, 6) &&
-                allowedCaller!=stack.filename 
-            ) {
-                leaked=true;
-                break;
-            }
-        }
-
-        stack=stack.caller;
-    } while (stack);
-
-    return leaked;
-},
-
-hitch: function(obj, meth) {
-    if (!obj[meth]) {
-        throw "method '" + meth + "' does not exist on object '" + obj + "'";
-    }
-
-    var hitchCaller=Components.stack.caller.filename;
-    var staticArgs = Array.prototype.splice.call(arguments, 2, arguments.length);
-
-    return function() {
-        if (ferramentasbacenjud_gmCompiler.apiLeakCheck(hitchCaller)) {
-            return;
-        }
-        
-        // make a copy of staticArgs (don't modify it because it gets reused for
-        // every invocation).
-        var args = staticArgs.concat();
-
-        // add all the new arguments
-        for (var i = 0; i < arguments.length; i++) {
-            args.push(arguments[i]);
-        }
-
-        // invoke the original function with the correct this obj and the combined
-        // list of static and dynamic arguments.
-        return obj[meth].apply(obj, args);
-    };
-},
-
 addStyle:function(doc, css) {
     var head, style;
     head = doc.getElementsByTagName('head')[0];
@@ -234,16 +174,6 @@ onUnLoad: function() {
 
 }; //object ferramentasbacenjud_gmCompiler
 
-
-function ferramentasbacenjud_ScriptStorage() {
-    this.prefMan=new ferramentasbacenjud_PrefManager();
-}
-ferramentasbacenjud_ScriptStorage.prototype.setValue = function(name, val) {
-    this.prefMan.setValue(name, val);
-}
-ferramentasbacenjud_ScriptStorage.prototype.getValue = function(name, defVal) {
-    return this.prefMan.getValue(name, defVal);
-}
 
 
 window.addEventListener('load', ferramentasbacenjud_gmCompiler.onLoad, false);

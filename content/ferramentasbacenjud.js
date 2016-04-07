@@ -689,7 +689,7 @@ var Bacen = {
         if (modo != 'preencher' && modo != 'consulta') {
             throw new Error('Modo inválido: ' + modo);
         }
-        var parser = new DOMParser();
+        var parser = new window.DOMParser();
         var ret = parser.parseFromString(obj.responseText, 'text/xml').querySelector('return').textContent;
         var processo = parser.parseFromString(ret, 'text/xml');
         var erros = [];
