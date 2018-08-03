@@ -316,23 +316,26 @@ var Bacen = {
             throw new Error('Modo inválido: ' + modo);
         }
         var todas_partes = (modo == 'preencher' ? 'S' : 'N');
+        // WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
         var options = {
             method: 'POST',
-            url: 'http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php',
-            data: '<?xml version="1.0" encoding="UTF-8"?>'
-                + '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="urn:consulta_processual" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
-                + '<SOAP-ENV:Body>'
-                + '<ns1:ws_consulta_processo>'
-                + '<num_proc xsi:type="xsd:string">' + numproc + '</num_proc>'
-                + '<uf xsi:type="xsd:string">' + estado + '</uf>'
-                + '<todas_fases xsi:type="xsd:string">N</todas_fases>'
-                + '<todas_partes xsi:type="xsd:string">' + todas_partes + '</todas_partes>'
-                + '<todos_valores>N</todos_valores>'
-                + '</ns1:ws_consulta_processo>'
-                + '</SOAP-ENV:Body>'
-                + '</SOAP-ENV:Envelope>',
+            url: 'http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php',
+            data: `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+    <soapenv:Header/>
+    <soapenv:Body>
+        <num_proc>${numproc}</num_proc>
+        <uf>${estado}</uf>
+        <todas_fases>N</todas_fases>
+        <todas_partes>${todas_partes}</todas_partes>
+        <todos_valores>N</todos_valores>
+    </soapenv:Body>
+</soapenv:Envelope>`,
             onload: this.bind(this.preencher, modo),
-        }
+            headers: {
+                SOAPAction: 'consulta_processual_ws_wsdl#ws_consulta_processo'
+            }
+        };
         GM_xmlhttpRequest(options);
     },
     // }}}
