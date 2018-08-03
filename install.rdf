@@ -10,8 +10,8 @@
 		<em:contributor>http://arantius.com/</em:contributor>
 		<em:optionsURL>chrome://ferramentasbacenjud/content/options.xul</em:optionsURL>
 		<em:optionsType>2</em:optionsType>
-		<em:homepageURL>https://eproc.trf4.jus.br/eproc2trf4/ferramentas/plugin/bacenjud.php</em:homepageURL>
-		<em:updateURL>https://eproc.trf4.jus.br/eproc2trf4/ferramentas/plugin/repo/update-bacen.rdf</em:updateURL>
+		<em:homepageURL>https://eproc.trf4.jus.br/eproc2trf4/ajuda/plugin/bacenjud.php</em:homepageURL>
+		<em:updateURL>https://eproc.trf4.jus.br/eproc2trf4/ajuda/plugin/repo/update-bacen.rdf</em:updateURL>
 		<em:targetApplication>
 			<Description>
 				<em:id>{ec8030f7-c20a-464f-9b0e-13a3a9e97384}</em:id>
