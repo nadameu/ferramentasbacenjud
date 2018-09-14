@@ -2,7 +2,11 @@
 const inputs = Array.from(document.getElementsByTagName('input'));
 inputs.forEach(input => {
 	input.addEventListener('change', () => {
-		browser.storage.local.set({ [input.id]: input.value }).catch(err => console.error(err));
+		const promise =
+			input.value.trim() === ''
+				? browser.storage.local.remove(input.id)
+				: browser.storage.local.set({ [input.id]: input.value });
+		promise.catch(err => console.error(err));
 	});
 });
 
@@ -15,7 +19,7 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 	changed.forEach(key => {
 		const input = inputsById.get(key);
 		if (input) {
-			input.value = ((changes as any)[key] as browser.storage.StorageChange).newValue;
+			input.value = ((changes as any)[key] as browser.storage.StorageChange).newValue || '';
 		}
 	});
 });
