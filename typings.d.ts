@@ -3,4 +3,6 @@ interface Window {
 }
 
 interface UnsafeWindow extends Window {
+	excluirPessoa(): void;
+	excluirReu(): void;
 }

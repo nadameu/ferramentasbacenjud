@@ -1,53 +1,17 @@
-/**
- * Atalho para `document.getElementById()`
- */
-function $<T extends HTMLElement>(id: string) {
-	return document.getElementById(id) as T | null;
+function main() {
+	Preferencias.init();
+	new Bacen();
 }
 
-/**
- * Atalho para `document.getElementsByTagName()`
- */
-function $$<T extends Element>(tag: string) {
-	return document.getElementsByTagName(tag) as NodeListOf<T>;
-}
-
-/**
- * Atalho para `Array.from()`
- */
-function $A<T>(group: ArrayLike<T>) {
-	return Array.from(group);
-}
-
-/**
- * Retorna o primeiro resultado de `document.getElementsByName()`
- */
-function $F<
-	T extends HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
->(name: string) {
-	return document.getElementsByName(name)[0] as T | undefined;
-}
-
-/**
- * Retorna uma string com o número no formato português brasileiro
- */
-function formatNumber(num: number) {
-	return num.toLocaleString('pt-BR', {
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2,
-		minimumIntegerDigits: 1,
-		useGrouping: true,
-	});
+interface Apply<A> {
+	ap<B>(that: Apply<(_: A) => B>): Apply<B>;
+	map<B>(f: (_: A) => B): Apply<B>;
 }
 
 /**
  * Objeto principal do programa
  */
 class Bacen {
-	/**
-	 * Método utilizado
-	 */
-	method: string = '';
 	/**
 	 * Página sendo exibida
 	 */
@@ -63,11 +27,9 @@ class Bacen {
 		const url = new URL(location.href);
 		this.pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
 		const parametros = url.searchParams;
-		if (parametros.has('method')) {
-			this.method = parametros.get('method') as string;
-		}
+		const method = parametros.get('method') || '';
 		if (this.pagina in this && typeof (this as any)[this.pagina] === 'function') {
-			const result = (this as any)[this.pagina](this.method);
+			const result = (this as any)[this.pagina](method);
 			if (result instanceof Promise) {
 				result.catch(err => console.error(err));
 			}
@@ -81,10 +43,10 @@ class Bacen {
 		if (method == 'conferirDados') {
 			let erros;
 			let msgErro = '';
-			const senhaJuiz = $F('senhaJuiz');
-			const btnIncluir = $F('btnIncluir');
+			const senhaJuiz = query('[name="senhaJuiz"]');
+			const btnIncluir = query('[name="btnIncluir"]');
 			if ((erros = document.getElementsByClassName('msgErro')).length) {
-				$A(erros).forEach(function(erro) {
+				Array.from(erros).forEach(function(erro) {
 					erro.innerHTML = erro.innerHTML
 						.replace(/\n?•(\&nbsp;)?/g, '')
 						.replace('<b>', '&ldquo;')
@@ -151,11 +113,11 @@ class Bacen {
 	 */
 	consultarSolicitacoesProtocoladasJuizo(method: string) {
 		if (method == 'editarCriteriosConsultaPorVara') {
-			const codigoVara = $F('codigoVara');
+			const codigoVara = query('[name="codigoVara"]');
 			if (codigoVara) {
 				codigoVara.value = GM_getValue('vara');
 			}
-			const operador = $F('operador');
+			const operador = query('[name="operador"]');
 			if (operador) {
 				operador.value = GM_getValue('juiz');
 			}
@@ -169,7 +131,7 @@ class Bacen {
 	 */
 	consultarSolicitacoesProtocoladasProcesso(method: string) {
 		if (method == 'editarCriteriosConsultaPorProcesso') {
-			const numeroProcesso = $F('numeroProcesso');
+			const numeroProcesso = query('[name="numeroProcesso"]');
 			if (numeroProcesso) {
 				numeroProcesso.focus();
 				numeroProcesso.addEventListener(
@@ -196,7 +158,7 @@ class Bacen {
 	 */
 	consultarSolicitacoesProtocoladasProtocolo(method: string) {
 		if (method == 'editarCriteriosConsultaPorProtocolo') {
-			const numeroProtocolo = $F('numeroProtocolo');
+			const numeroProtocolo = query('[name="numeroProtocolo"]');
 			if (numeroProtocolo) {
 				numeroProtocolo.focus();
 				numeroProtocolo.addEventListener(
@@ -249,9 +211,9 @@ class Bacen {
 	 */
 	criarMinutaBVInclusao(method: string) {
 		if (method == 'criar') {
-			const cdOperadorJuiz = $F('cdOperadorJuiz');
-			const codigoVara = $F('codigoVara');
-			const processo = $F<HTMLInputElement>('processo');
+			const cdOperadorJuiz = query('[name="cdOperadorJuiz"]');
+			const codigoVara = query('[name="codigoVara"]');
+			const processo = query('[name="processo"]');
 			if (cdOperadorJuiz && cdOperadorJuiz.type != 'hidden') {
 				cdOperadorJuiz.setAttribute('value', GM_getValue('juiz'));
 			}
@@ -275,77 +237,60 @@ class Bacen {
 	}
 
 	async dologin(_: string) {
-		interface Info {
-			campo: HTMLInputElement;
-			preenchido: boolean;
+		return liftA4(
+			query<HTMLInputElement>('[name="unidade"]'),
+			query<HTMLInputElement>('[name="operador"]'),
+			query<HTMLInputElement>('[name="senha"]'),
+			query<HTMLInputElement>('#opcao_operador'),
+			vincularCampos
+		);
+
+		function vincularCampos(
+			unidade: HTMLInputElement,
+			operador: HTMLInputElement,
+			senha: HTMLInputElement,
+			radio: HTMLInputElement
+		) {
+			Preferencias.vincularInput(unidade, 'unidade');
+			Preferencias.vincularInput(operador, 'login');
+			window.addEventListener('load', preencher(senha, operador, unidade));
+			radio.addEventListener('click', preencher(senha, operador, unidade));
 		}
-		async function obterCampo(nome: string) {
-			const campo = $F(nome) as HTMLInputElement | undefined;
-			if (campo) {
-				return campo;
-			}
-			throw new Error(`Campo ${nome} não encontrado.`);
+
+		function preencher(
+			senha: HTMLInputElement,
+			operador: HTMLInputElement,
+			unidade: HTMLInputElement
+		): EventListener {
+			return () =>
+				setTimeout(() => {
+					preencherCampos(senha, operador, unidade).catch(err => console.error(err));
+				}, 100);
 		}
-		const campos = new Map(
-			await Promise.all(
-				['unidade', 'operador', 'senha'].map(nome =>
-					obterCampo(nome).then(campo => [nome, campo] as [string, HTMLInputElement])
-				)
-			)
-		);
-		async function vincularCamposPreferencia(campo: HTMLInputElement, nomePref: string) {
-			let preenchido = false;
-			campo.addEventListener('change', () => {
-				const promise =
-					campo.value.trim() === ''
-						? browser.storage.local.remove(nomePref)
-						: browser.storage.local.set({ [nomePref]: campo.value });
-				promise.catch(err => console.error(err));
-			});
-			const prefs = await browser.storage.local.get(nomePref);
-			if (nomePref in prefs) {
-				campo.value = prefs[nomePref];
-				preenchido = true;
-			}
-			return { campo, preenchido } as Info;
+
+		async function preencherCampos(
+			senha: HTMLInputElement,
+			operador: HTMLInputElement,
+			unidade: HTMLInputElement
+		) {
+			// Ordem dos campos de trás para frente, pois o último campo não preenchido restará focado.
+			senha.focus();
+			await preencherCampo(operador, 'login');
+			await preencherCampo(unidade, 'unidade');
 		}
-		const [unidade, operador, senha] = ['unidade', 'operador', 'senha'].map(
-			nome => campos.get(nome) as HTMLInputElement
-		);
-		const informacoes = new Map(
-			await Promise.all(
-				[{ campo: unidade, pref: 'unidade' }, { campo: operador, pref: 'login' }].map(
-					({ campo, pref }) =>
-						vincularCamposPreferencia(campo, pref).then(info => [pref, info] as [string, Info])
-				)
-			)
-		);
-		const [infoUnidade, infoOperador] = ['unidade', 'login'].map(
-			nome => informacoes.get(nome) as Info
-		);
-		function focarCampoVazio() {
-			if (infoUnidade.preenchido) {
-				if (infoOperador.preenchido) {
-					senha.focus();
-				} else {
-					operador.focus();
+
+		async function preencherCampo(input: HTMLInputElement, nome: string) {
+			const pref = await Preferencias.obter(nome);
+			pref.fold(
+				() => {
+					input.value = '';
+					input.focus();
+				},
+				x => {
+					input.value = x;
 				}
-			} else {
-				unidade.focus();
-			}
+			);
 		}
-		window.addEventListener('load', focarCampoVazio, { once: true });
-		browser.storage.onChanged.addListener((changes, areaName) => {
-			if (areaName !== 'local') return;
-			const changed = Object.keys(changes);
-			changed.forEach(key => {
-				if (informacoes.has(key)) {
-					const info = informacoes.get(key) as Info;
-					info.campo.value =
-						((changes as any)[key] as browser.storage.StorageChange).newValue || '';
-				}
-			});
-		});
 	}
 
 	/**
@@ -501,8 +446,8 @@ class Bacen {
 		e.stopPropagation();
 		this.submit = true;
 		if (this.submit && this.valid && !this.buscando) {
-			const numeroProcesso = $F('numeroProcesso');
-			const numeroProtocolo = $F('numeroProtocolo');
+			const numeroProcesso = query('[name="numeroProcesso"]');
+			const numeroProtocolo = query('[name="numeroProtocolo"]');
 			if (numeroProcesso) {
 				numeroProcesso.select();
 				numeroProcesso.focus();
@@ -510,14 +455,14 @@ class Bacen {
 				numeroProtocolo.select();
 				numeroProtocolo.focus();
 			}
-			$$('form')[0].submit();
+			queryAll<HTMLFormElement>('form')[0].submit();
 		}
 	}
 
 	/**
 	 * Função que atende ao evento change do Número do Processo
 	 */
-	onConsultaProcessoChange(input) {
+	onConsultaProcessoChange(input: HTMLInputElement) {
 		const valor = input.value.toString();
 		const numproc = this.getNumproc(valor);
 		if (valor) {
@@ -545,7 +490,7 @@ class Bacen {
 	/**
 	 * Função que atende ao evento change do Número do Protocolo
 	 */
-	onConsultaProtocoloChange(input) {
+	onConsultaProtocoloChange(input: HTMLInputElement) {
 		const valor = input.value.toString();
 		const protocolo = this.getProtocolo(valor);
 		if (valor && protocolo) {
@@ -564,10 +509,10 @@ class Bacen {
 	/**
 	 * Função que atende ao evento change do Número do Processo
 	 */
-	onProcessoChange(input) {
+	onProcessoChange(input: HTMLInputElement) {
 		const valor = input.value.toString();
-		$$('form')[0].reset();
-		const reus = $A($F('reus').getElementsByTagName('option'));
+		queryAll<HTMLFormElement>('form')[0].reset();
+		const reus = Array.from(query('[name="reus"]').getElementsByTagName('option'));
 		reus.forEach(function(reu) {
 			reu.selected = true;
 		});
@@ -600,19 +545,19 @@ class Bacen {
 	/**
 	 * Função que atende ao evento keypress do campo Processo
 	 */
-	onProcessoKeypress(e: KeyboardEvent, input) {
+	onProcessoKeypress(e: KeyboardEvent, input: HTMLInputElement) {
 		if (e.keyCode == 9 || e.keyCode == 13) {
 			e.preventDefault();
 			e.stopPropagation();
 			if (input.name == 'processo') {
-				$F('idTipoAcao').focus();
+				query('[name="idTipoAcao"]').focus();
 			} else if (input.name == 'numeroProcesso' || input.name == 'numeroProtocolo') {
 				this.submit = e.keyCode == 13 ? true : false;
 				document.getElementsByClassName('botao')[0].focus();
 				if (this.submit && this.valid && !this.buscando) {
 					input.select();
 					input.focus();
-					$$('form')[0].submit();
+					queryAll<HTMLFormElement>('form')[0].submit();
 				}
 			}
 		}
@@ -628,7 +573,7 @@ class Bacen {
 			let erros;
 			let msgErro = '';
 			if ((erros = document.getElementsByClassName('msgErro')).length) {
-				$A(erros).forEach(function(erro) {
+				Array.from(erros).forEach(function(erro) {
 					erro.innerHTML = erro.innerHTML
 						.replace(/\n?•(\&nbsp;)?/g, '')
 						.replace('<b>', '&ldquo;')
@@ -638,9 +583,9 @@ class Bacen {
 				window.alert(msgErro);
 				history.go(-1);
 			} else if (document.getElementsByClassName('pagebanner').length) {
-				const registros = document
-					.getElementsByClassName('pagebanner')[0]
-					.textContent.match(/^\d+/);
+				const registros = (
+					document.getElementsByClassName('pagebanner')[0].textContent || ''
+				).match(/^\d+/);
 				if (registros == 1) {
 					window.location.href = document
 						.getElementById('ordem')
@@ -660,7 +605,7 @@ class Bacen {
 			let erros;
 			let msgErro = '';
 			if ((erros = document.getElementsByClassName('msgErro')).length) {
-				$A(erros).forEach(function(erro) {
+				Array.from(erros).forEach(function(erro) {
 					erro.innerHTML = erro.innerHTML
 						.replace(/\n?•(\&nbsp;)?/g, '')
 						.replace('<b>', '&ldquo;')
@@ -695,7 +640,7 @@ class Bacen {
 			erros.push(erro.textContent);
 		});
 		const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
-		const campoProcesso = $F(el);
+		const campoProcesso = query(`[name="${el}"]`);
 		if (campoProcesso) {
 			if (erros.length) {
 				this.valid = false;
@@ -715,14 +660,14 @@ class Bacen {
 						processo.querySelector('CodClasse').textContent == '000229' ||
 						processo.querySelector('CodClasse').textContent == '000098'
 					) {
-						$F('idTipoAcao').value = 1;
+						query('[name="idTipoAcao"]').value = 1;
 					} else if (processo.querySelector('CodClasse').textContent == '000099') {
-						$F('idTipoAcao').value = 4;
+						query('[name="idTipoAcao"]').value = 4;
 					}
-					if ($F('valorUnico') && processo.querySelector('ValCausa')) {
+					if (query('[name="valorUnico"]') && processo.querySelector('ValCausa')) {
 						const valorCausa = Number(processo.querySelector('ValCausa').textContent);
 						if (!isNaN(valorCausa)) {
-							$F('valorUnico').value = formatNumber(valorCausa);
+							query('[name="valorUnico"]').value = formatNumber(valorCausa);
 						}
 					}
 					const reus = [];
@@ -733,8 +678,8 @@ class Bacen {
 								parte.querySelectorAll('Autor').length &&
 								parte.querySelector('Autor').textContent == 'S'
 							) {
-								$F('nomeAutor').value = parte.querySelector('Nome').textContent;
-								$F('cpfCnpjAutor').value = parte.querySelector('CPF_CGC').textContent;
+								query('[name="nomeAutor"]').value = parte.querySelector('Nome').textContent;
+								query('[name="cpfCnpjAutor"]').value = parte.querySelector('CPF_CGC').textContent;
 							} else if (
 								(parte.querySelectorAll('Réu').length &&
 									parte.querySelector('Réu').textContent == 'S') ||
@@ -747,9 +692,9 @@ class Bacen {
 					this.processaLista(reus);
 				} else if (modo == 'consulta') {
 					if (this.submit) {
-						$F('numeroProcesso').select();
-						$F('numeroProcesso').focus();
-						$$('form')[0].submit();
+						query('[name="numeroProcesso"]').select();
+						query('[name="numeroProcesso"]').focus();
+						queryAll('form')[0].submit();
 					}
 				} else {
 					throw new Error('Modo desconhecido: ' + modo);
@@ -771,9 +716,9 @@ class Bacen {
 		if (this.reus.length) {
 			const documento = this.reus[0].toString();
 			this.reus.splice(0, 1);
-			$('cpfCnpj').value = documento;
-			$('botaoIncluirCpfCnpj').disabled = false;
-			$('botaoIncluirCpfCnpj').focus();
+			query('#cpfCnpj').value = documento;
+			query('#botaoIncluirCpfCnpj').disabled = false;
+			query('#botaoIncluirCpfCnpj').focus();
 			(function(window) {
 				const evento = document.createEvent('MouseEvents');
 				evento.initMouseEvent(
@@ -793,15 +738,166 @@ class Bacen {
 					0,
 					null
 				);
-				$('botaoIncluirCpfCnpj').dispatchEvent(evento);
+				query('#botaoIncluirCpfCnpj').dispatchEvent(evento);
 			})(window.wrappedJSObject);
-		} else if ($F('idTipoAcao') && $F('idTipoAcao').value == '') {
-			$F('idTipoAcao').focus();
-		} else if ($F('valorUnico')) {
-			$F('valorUnico').select();
-			$F('valorUnico').focus();
+		} else if (query('[name="idTipoAcao"]') && query('[name="idTipoAcao"]').value == '') {
+			query('[name="idTipoAcao"]').focus();
+		} else if (query('[name="valorUnico"]')) {
+			query('[name="valorUnico"]').select();
+			query('[name="valorUnico"]').focus();
 		}
 	}
 }
 
-new Bacen();
+class Maybe<A> {
+	constructor(readonly fold: <B>(Nothing: () => B, Just: (value: A) => B) => B) {}
+
+	ap<B>(that: Maybe<(_: A) => B>): Maybe<B> {
+		return that.chain(f => this.map(f));
+	}
+	chain<B>(f: (_: A) => Maybe<B>): Maybe<B> {
+		return this.fold(() => Nothing, f);
+	}
+	map<B>(f: (_: A) => B): Maybe<B> {
+		return this.chain(x => Just(f(x)));
+	}
+	getOrElse(defaultValue: A): A {
+		return this.fold(() => defaultValue, x => x);
+	}
+
+	static fromNullable<A>(value: A | null | undefined): Maybe<A> {
+		return value == null ? Nothing : Just(value);
+	}
+	static of<A>(value: A): Maybe<A> {
+		return new Maybe((_, J) => J(value));
+	}
+	static zero<A = never>(): Maybe<A> {
+		return new Maybe((N, _) => N());
+	}
+}
+function Just<A>(value: A): Maybe<A> {
+	return Maybe.of(value);
+}
+const Nothing = Maybe.zero();
+
+class Preferencias {
+	static initialized: boolean = false;
+	static inputs: Map<string, HTMLInputElement[]> = new Map();
+
+	static init() {
+		if (this.initialized) return;
+		browser.storage.onChanged.addListener((changes, areaName) => {
+			if (areaName !== 'local') return;
+			const changed = Object.keys(changes);
+			changed.forEach(key => {
+				const value = (changes as any)[key].newValue as string | undefined;
+				if (this.inputs.has(key)) {
+					(this.inputs.get(key) as HTMLInputElement[]).forEach(input => {
+						input.value = value || '';
+					});
+				}
+			});
+		});
+		this.initialized = true;
+	}
+
+	static obter(nome: string, valorPadrao: string): Promise<string>;
+	static obter(nome: string): Promise<Maybe<string>>;
+	static obter(nome: string, valorPadrao?: string) {
+		const maybeValorPadrao = Maybe.fromNullable(valorPadrao);
+		return browser.storage.local
+			.get(nome)
+			.then(prefs => Maybe.fromNullable(prefs[nome] as string | undefined))
+			.then(maybe => maybeValorPadrao.fold<any>(() => maybe, valor => maybe.getOrElse(valor)));
+	}
+
+	static async vincularInput(input: HTMLInputElement, nome: string) {
+		input.addEventListener('change', () => {
+			const valor = input.value.trim();
+			const promise =
+				valor !== ''
+					? browser.storage.local.set({ [nome]: valor })
+					: browser.storage.local.remove(nome);
+			promise.catch(err => console.error(err));
+		});
+		this.inputs.set(nome, (this.inputs.get(nome) || []).concat([input]));
+		const valor = await this.obter(nome);
+		input.value = valor.getOrElse('');
+	}
+}
+
+function formatNumber(num: number) {
+	return num.toLocaleString('pt-BR', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+		minimumIntegerDigits: 1,
+		useGrouping: true,
+	});
+}
+
+function liftA1<A, B>(mx: Maybe<A>, f: (x: A) => B): Maybe<B>;
+function liftA1<A, B>(ax: Apply<A>, f: (x: A) => B): Apply<B>;
+function liftA1<A, B>(ax: Apply<A>, f: (x: A) => B): Apply<B> {
+	return ax.map(f);
+}
+
+function liftA2<A, B, C>(mx: Maybe<A>, my: Maybe<B>, f: (x: A, y: B) => C): Maybe<C>;
+function liftA2<A, B, C>(ax: Apply<A>, ay: Apply<B>, f: (x: A, y: B) => C): Apply<C>;
+function liftA2<A, B, C>(ax: Apply<A>, ay: Apply<B>, f: (x: A, y: B) => C): Apply<C> {
+	return ay.ap(ax.map((x: A) => (y: B) => f(x, y)));
+}
+
+function liftA3<A, B, C, D>(
+	mx: Maybe<A>,
+	my: Maybe<B>,
+	mz: Maybe<C>,
+	f: (x: A, y: B, z: C) => D
+): Maybe<D>;
+function liftA3<A, B, C, D>(
+	ax: Apply<A>,
+	ay: Apply<B>,
+	az: Apply<C>,
+	f: (x: A, y: B, z: C) => D
+): Apply<D>;
+function liftA3<A, B, C, D>(
+	ax: Apply<A>,
+	ay: Apply<B>,
+	az: Apply<C>,
+	f: (x: A, y: B, z: C) => D
+): Apply<D> {
+	return az.ap(ay.ap(ax.map((x: A) => (y: B) => (z: C) => f(x, y, z))));
+}
+
+function liftA4<A, B, C, D, E>(
+	mw: Maybe<A>,
+	mx: Maybe<B>,
+	my: Maybe<C>,
+	mz: Maybe<D>,
+	f: (w: A, x: B, y: C, z: D) => E
+): Maybe<E>;
+function liftA4<A, B, C, D, E>(
+	aw: Apply<A>,
+	ax: Apply<B>,
+	ay: Apply<C>,
+	az: Apply<D>,
+	f: (w: A, x: B, y: C, z: D) => E
+): Apply<E>;
+function liftA4<A, B, C, D, E>(
+	aw: Apply<A>,
+	ax: Apply<B>,
+	ay: Apply<C>,
+	az: Apply<D>,
+	f: (w: A, x: B, y: C, z: D) => E
+): Apply<E> {
+	return az.ap(ay.ap(ax.ap(aw.map((w: A) => (x: B) => (y: C) => (z: D) => f(w, x, y, z)))));
+}
+
+function query<T extends Element>(selector: string, context: NodeSelector = document): Maybe<T> {
+	return Maybe.fromNullable(context.querySelector<T>(selector));
+}
+
+function queryAll<T extends Element>(selector: string, context: NodeSelector = document): T[] {
+	return Array.from(context.querySelectorAll<T>(selector));
+}
+
+main();

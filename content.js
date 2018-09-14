@@ -1,38 +1,7 @@
 "use strict";
-/**
- * Atalho para `document.getElementById()`
- */
-function $(id) {
-    return document.getElementById(id);
-}
-/**
- * Atalho para `document.getElementsByTagName()`
- */
-function $$(tag) {
-    return document.getElementsByTagName(tag);
-}
-/**
- * Atalho para `Array.from()`
- */
-function $A(group) {
-    return Array.from(group);
-}
-/**
- * Retorna o primeiro resultado de `document.getElementsByName()`
- */
-function $F(name) {
-    return document.getElementsByName(name)[0];
-}
-/**
- * Retorna uma string com o número no formato português brasileiro
- */
-function formatNumber(num) {
-    return num.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-        minimumIntegerDigits: 1,
-        useGrouping: true,
-    });
+function main() {
+    Preferencias.init();
+    new Bacen();
 }
 /**
  * Objeto principal do programa
@@ -42,21 +11,15 @@ class Bacen {
      * Função inicial do programa
      */
     constructor() {
-        /**
-         * Método utilizado
-         */
-        this.method = '';
         this.submit = false;
         this.valid = false;
         this.buscando = false;
         const url = new URL(location.href);
         this.pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
         const parametros = url.searchParams;
-        if (parametros.has('method')) {
-            this.method = parametros.get('method');
-        }
+        const method = parametros.get('method') || '';
         if (this.pagina in this && typeof this[this.pagina] === 'function') {
-            const result = this[this.pagina](this.method);
+            const result = this[this.pagina](method);
             if (result instanceof Promise) {
                 result.catch(err => console.error(err));
             }
@@ -69,10 +32,10 @@ class Bacen {
         if (method == 'conferirDados') {
             let erros;
             let msgErro = '';
-            const senhaJuiz = $F('senhaJuiz');
-            const btnIncluir = $F('btnIncluir');
+            const senhaJuiz = query('[name="senhaJuiz"]');
+            const btnIncluir = query('[name="btnIncluir"]');
             if ((erros = document.getElementsByClassName('msgErro')).length) {
-                $A(erros).forEach(function (erro) {
+                Array.from(erros).forEach(function (erro) {
                     erro.innerHTML = erro.innerHTML
                         .replace(/\n?•(\&nbsp;)?/g, '')
                         .replace('<b>', '&ldquo;')
@@ -119,11 +82,11 @@ class Bacen {
      */
     consultarSolicitacoesProtocoladasJuizo(method) {
         if (method == 'editarCriteriosConsultaPorVara') {
-            const codigoVara = $F('codigoVara');
+            const codigoVara = query('[name="codigoVara"]');
             if (codigoVara) {
                 codigoVara.value = GM_getValue('vara');
             }
-            const operador = $F('operador');
+            const operador = query('[name="operador"]');
             if (operador) {
                 operador.value = GM_getValue('juiz');
             }
@@ -137,7 +100,7 @@ class Bacen {
      */
     consultarSolicitacoesProtocoladasProcesso(method) {
         if (method == 'editarCriteriosConsultaPorProcesso') {
-            const numeroProcesso = $F('numeroProcesso');
+            const numeroProcesso = query('[name="numeroProcesso"]');
             if (numeroProcesso) {
                 numeroProcesso.focus();
                 numeroProcesso.addEventListener('change', () => this.onConsultaProcessoChange(numeroProcesso), true);
@@ -156,7 +119,7 @@ class Bacen {
      */
     consultarSolicitacoesProtocoladasProtocolo(method) {
         if (method == 'editarCriteriosConsultaPorProtocolo') {
-            const numeroProtocolo = $F('numeroProtocolo');
+            const numeroProtocolo = query('[name="numeroProtocolo"]');
             if (numeroProtocolo) {
                 numeroProtocolo.focus();
                 numeroProtocolo.addEventListener('change', () => this.onConsultaProtocoloChange(numeroProtocolo), true);
@@ -193,9 +156,9 @@ class Bacen {
      */
     criarMinutaBVInclusao(method) {
         if (method == 'criar') {
-            const cdOperadorJuiz = $F('cdOperadorJuiz');
-            const codigoVara = $F('codigoVara');
-            const processo = $F('processo');
+            const cdOperadorJuiz = query('[name="cdOperadorJuiz"]');
+            const codigoVara = query('[name="codigoVara"]');
+            const processo = query('[name="processo"]');
             if (cdOperadorJuiz && cdOperadorJuiz.type != 'hidden') {
                 cdOperadorJuiz.setAttribute('value', GM_getValue('juiz'));
             }
@@ -218,58 +181,33 @@ class Bacen {
         this.criarMinutaBVInclusao(method);
     }
     async dologin(_) {
-        async function obterCampo(nome) {
-            const campo = $F(nome);
-            if (campo) {
-                return campo;
-            }
-            throw new Error(`Campo ${nome} não encontrado.`);
+        return liftA4(query('[name="unidade"]'), query('[name="operador"]'), query('[name="senha"]'), query('#opcao_operador'), vincularCampos);
+        function vincularCampos(unidade, operador, senha, radio) {
+            Preferencias.vincularInput(unidade, 'unidade');
+            Preferencias.vincularInput(operador, 'login');
+            window.addEventListener('load', preencher(senha, operador, unidade));
+            radio.addEventListener('click', preencher(senha, operador, unidade));
         }
-        const campos = new Map(await Promise.all(['unidade', 'operador', 'senha'].map(nome => obterCampo(nome).then(campo => [nome, campo]))));
-        async function vincularCamposPreferencia(campo, nomePref) {
-            let preenchido = false;
-            campo.addEventListener('change', () => {
-                const promise = campo.value.trim() === ''
-                    ? browser.storage.local.remove(nomePref)
-                    : browser.storage.local.set({ [nomePref]: campo.value });
-                promise.catch(err => console.error(err));
+        function preencher(senha, operador, unidade) {
+            return () => setTimeout(() => {
+                preencherCampos(senha, operador, unidade).catch(err => console.error(err));
+            }, 100);
+        }
+        async function preencherCampos(senha, operador, unidade) {
+            // Ordem dos campos de trás para frente, pois o último campo não preenchido restará focado.
+            senha.focus();
+            await preencherCampo(operador, 'login');
+            await preencherCampo(unidade, 'unidade');
+        }
+        async function preencherCampo(input, nome) {
+            const pref = await Preferencias.obter(nome);
+            pref.fold(() => {
+                input.value = '';
+                input.focus();
+            }, x => {
+                input.value = x;
             });
-            const prefs = await browser.storage.local.get(nomePref);
-            if (nomePref in prefs) {
-                campo.value = prefs[nomePref];
-                preenchido = true;
-            }
-            return { campo, preenchido };
         }
-        const [unidade, operador, senha] = ['unidade', 'operador', 'senha'].map(nome => campos.get(nome));
-        const informacoes = new Map(await Promise.all([{ campo: unidade, pref: 'unidade' }, { campo: operador, pref: 'login' }].map(({ campo, pref }) => vincularCamposPreferencia(campo, pref).then(info => [pref, info]))));
-        const [infoUnidade, infoOperador] = ['unidade', 'login'].map(nome => informacoes.get(nome));
-        function focarCampoVazio() {
-            if (infoUnidade.preenchido) {
-                if (infoOperador.preenchido) {
-                    senha.focus();
-                }
-                else {
-                    operador.focus();
-                }
-            }
-            else {
-                unidade.focus();
-            }
-        }
-        window.addEventListener('load', focarCampoVazio, { once: true });
-        browser.storage.onChanged.addListener((changes, areaName) => {
-            if (areaName !== 'local')
-                return;
-            const changed = Object.keys(changes);
-            changed.forEach(key => {
-                if (informacoes.has(key)) {
-                    const info = informacoes.get(key);
-                    info.campo.value =
-                        changes[key].newValue || '';
-                }
-            });
-        });
     }
     /**
      * Obtém informações do processo e preenche automaticamente os campos
@@ -427,8 +365,8 @@ class Bacen {
         e.stopPropagation();
         this.submit = true;
         if (this.submit && this.valid && !this.buscando) {
-            const numeroProcesso = $F('numeroProcesso');
-            const numeroProtocolo = $F('numeroProtocolo');
+            const numeroProcesso = query('[name="numeroProcesso"]');
+            const numeroProtocolo = query('[name="numeroProtocolo"]');
             if (numeroProcesso) {
                 numeroProcesso.select();
                 numeroProcesso.focus();
@@ -437,7 +375,7 @@ class Bacen {
                 numeroProtocolo.select();
                 numeroProtocolo.focus();
             }
-            $$('form')[0].submit();
+            queryAll('form')[0].submit();
         }
     }
     /**
@@ -493,8 +431,8 @@ class Bacen {
      */
     onProcessoChange(input) {
         const valor = input.value.toString();
-        $$('form')[0].reset();
-        const reus = $A($F('reus').getElementsByTagName('option'));
+        queryAll('form')[0].reset();
+        const reus = Array.from(query('[name="reus"]').getElementsByTagName('option'));
         reus.forEach(function (reu) {
             reu.selected = true;
         });
@@ -533,7 +471,7 @@ class Bacen {
             e.preventDefault();
             e.stopPropagation();
             if (input.name == 'processo') {
-                $F('idTipoAcao').focus();
+                query('[name="idTipoAcao"]').focus();
             }
             else if (input.name == 'numeroProcesso' || input.name == 'numeroProtocolo') {
                 this.submit = e.keyCode == 13 ? true : false;
@@ -541,7 +479,7 @@ class Bacen {
                 if (this.submit && this.valid && !this.buscando) {
                     input.select();
                     input.focus();
-                    $$('form')[0].submit();
+                    queryAll('form')[0].submit();
                 }
             }
         }
@@ -556,7 +494,7 @@ class Bacen {
             let erros;
             let msgErro = '';
             if ((erros = document.getElementsByClassName('msgErro')).length) {
-                $A(erros).forEach(function (erro) {
+                Array.from(erros).forEach(function (erro) {
                     erro.innerHTML = erro.innerHTML
                         .replace(/\n?•(\&nbsp;)?/g, '')
                         .replace('<b>', '&ldquo;')
@@ -567,9 +505,7 @@ class Bacen {
                 history.go(-1);
             }
             else if (document.getElementsByClassName('pagebanner').length) {
-                const registros = document
-                    .getElementsByClassName('pagebanner')[0]
-                    .textContent.match(/^\d+/);
+                const registros = (document.getElementsByClassName('pagebanner')[0].textContent || '').match(/^\d+/);
                 if (registros == 1) {
                     window.location.href = document
                         .getElementById('ordem')
@@ -589,7 +525,7 @@ class Bacen {
             let erros;
             let msgErro = '';
             if ((erros = document.getElementsByClassName('msgErro')).length) {
-                $A(erros).forEach(function (erro) {
+                Array.from(erros).forEach(function (erro) {
                     erro.innerHTML = erro.innerHTML
                         .replace(/\n?•(\&nbsp;)?/g, '')
                         .replace('<b>', '&ldquo;')
@@ -624,7 +560,7 @@ class Bacen {
             erros.push(erro.textContent);
         });
         const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
-        const campoProcesso = $F(el);
+        const campoProcesso = query(`[name="${el}"]`);
         if (campoProcesso) {
             if (erros.length) {
                 this.valid = false;
@@ -643,15 +579,15 @@ class Bacen {
                 if (modo == 'preencher') {
                     if (processo.querySelector('CodClasse').textContent == '000229' ||
                         processo.querySelector('CodClasse').textContent == '000098') {
-                        $F('idTipoAcao').value = 1;
+                        query('[name="idTipoAcao"]').value = 1;
                     }
                     else if (processo.querySelector('CodClasse').textContent == '000099') {
-                        $F('idTipoAcao').value = 4;
+                        query('[name="idTipoAcao"]').value = 4;
                     }
-                    if ($F('valorUnico') && processo.querySelector('ValCausa')) {
+                    if (query('[name="valorUnico"]') && processo.querySelector('ValCausa')) {
                         const valorCausa = Number(processo.querySelector('ValCausa').textContent);
                         if (!isNaN(valorCausa)) {
-                            $F('valorUnico').value = formatNumber(valorCausa);
+                            query('[name="valorUnico"]').value = formatNumber(valorCausa);
                         }
                     }
                     const reus = [];
@@ -660,8 +596,8 @@ class Bacen {
                         .forEach(function (parte) {
                         if (parte.querySelectorAll('Autor').length &&
                             parte.querySelector('Autor').textContent == 'S') {
-                            $F('nomeAutor').value = parte.querySelector('Nome').textContent;
-                            $F('cpfCnpjAutor').value = parte.querySelector('CPF_CGC').textContent;
+                            query('[name="nomeAutor"]').value = parte.querySelector('Nome').textContent;
+                            query('[name="cpfCnpjAutor"]').value = parte.querySelector('CPF_CGC').textContent;
                         }
                         else if ((parte.querySelectorAll('Réu').length &&
                             parte.querySelector('Réu').textContent == 'S') ||
@@ -674,9 +610,9 @@ class Bacen {
                 }
                 else if (modo == 'consulta') {
                     if (this.submit) {
-                        $F('numeroProcesso').select();
-                        $F('numeroProcesso').focus();
-                        $$('form')[0].submit();
+                        query('[name="numeroProcesso"]').select();
+                        query('[name="numeroProcesso"]').focus();
+                        queryAll('form')[0].submit();
                     }
                 }
                 else {
@@ -698,22 +634,119 @@ class Bacen {
         if (this.reus.length) {
             const documento = this.reus[0].toString();
             this.reus.splice(0, 1);
-            $('cpfCnpj').value = documento;
-            $('botaoIncluirCpfCnpj').disabled = false;
-            $('botaoIncluirCpfCnpj').focus();
+            query('#cpfCnpj').value = documento;
+            query('#botaoIncluirCpfCnpj').disabled = false;
+            query('#botaoIncluirCpfCnpj').focus();
             (function (window) {
                 const evento = document.createEvent('MouseEvents');
                 evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
-                $('botaoIncluirCpfCnpj').dispatchEvent(evento);
+                query('#botaoIncluirCpfCnpj').dispatchEvent(evento);
             })(window.wrappedJSObject);
         }
-        else if ($F('idTipoAcao') && $F('idTipoAcao').value == '') {
-            $F('idTipoAcao').focus();
+        else if (query('[name="idTipoAcao"]') && query('[name="idTipoAcao"]').value == '') {
+            query('[name="idTipoAcao"]').focus();
         }
-        else if ($F('valorUnico')) {
-            $F('valorUnico').select();
-            $F('valorUnico').focus();
+        else if (query('[name="valorUnico"]')) {
+            query('[name="valorUnico"]').select();
+            query('[name="valorUnico"]').focus();
         }
     }
 }
-new Bacen();
+class Maybe {
+    constructor(fold) {
+        this.fold = fold;
+    }
+    ap(that) {
+        return that.chain(f => this.map(f));
+    }
+    chain(f) {
+        return this.fold(() => Nothing, f);
+    }
+    map(f) {
+        return this.chain(x => Just(f(x)));
+    }
+    getOrElse(defaultValue) {
+        return this.fold(() => defaultValue, x => x);
+    }
+    static fromNullable(value) {
+        return value == null ? Nothing : Just(value);
+    }
+    static of(value) {
+        return new Maybe((_, J) => J(value));
+    }
+    static zero() {
+        return new Maybe((N, _) => N());
+    }
+}
+function Just(value) {
+    return Maybe.of(value);
+}
+const Nothing = Maybe.zero();
+class Preferencias {
+    static init() {
+        if (this.initialized)
+            return;
+        browser.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== 'local')
+                return;
+            const changed = Object.keys(changes);
+            changed.forEach(key => {
+                const value = changes[key].newValue;
+                if (this.inputs.has(key)) {
+                    this.inputs.get(key).forEach(input => {
+                        input.value = value || '';
+                    });
+                }
+            });
+        });
+        this.initialized = true;
+    }
+    static obter(nome, valorPadrao) {
+        const maybeValorPadrao = Maybe.fromNullable(valorPadrao);
+        return browser.storage.local
+            .get(nome)
+            .then(prefs => Maybe.fromNullable(prefs[nome]))
+            .then(maybe => maybeValorPadrao.fold(() => maybe, valor => maybe.getOrElse(valor)));
+    }
+    static async vincularInput(input, nome) {
+        input.addEventListener('change', () => {
+            const valor = input.value.trim();
+            const promise = valor !== ''
+                ? browser.storage.local.set({ [nome]: valor })
+                : browser.storage.local.remove(nome);
+            promise.catch(err => console.error(err));
+        });
+        this.inputs.set(nome, (this.inputs.get(nome) || []).concat([input]));
+        const valor = await this.obter(nome);
+        input.value = valor.getOrElse('');
+    }
+}
+Preferencias.initialized = false;
+Preferencias.inputs = new Map();
+function formatNumber(num) {
+    return num.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        minimumIntegerDigits: 1,
+        useGrouping: true,
+    });
+}
+function liftA1(ax, f) {
+    return ax.map(f);
+}
+function liftA2(ax, ay, f) {
+    return ay.ap(ax.map((x) => (y) => f(x, y)));
+}
+function liftA3(ax, ay, az, f) {
+    return az.ap(ay.ap(ax.map((x) => (y) => (z) => f(x, y, z))));
+}
+function liftA4(aw, ax, ay, az, f) {
+    return az.ap(ay.ap(ax.ap(aw.map((w) => (x) => (y) => (z) => f(w, x, y, z)))));
+}
+function query(selector, context = document) {
+    return Maybe.fromNullable(context.querySelector(selector));
+}
+function queryAll(selector, context = document) {
+    return Array.from(context.querySelectorAll(selector));
+}
+main();
