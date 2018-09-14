@@ -1,0 +1,26 @@
+{
+	"name": "ferramentasbacenjud",
+	"version": "1.0.0",
+	"description": "Melhorias ao sistema BacenJud 2.0",
+	"private": true,
+	"scripts": {
+		"web-ext": "web-ext"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nadameu/ferramentasbacenjud.git"
+	},
+	"keywords": [],
+	"author": "nadameu",
+	"license": "GPL-3.0",
+	"bugs": {
+		"url": "https://github.com/nadameu/ferramentasbacenjud/issues"
+	},
+	"homepage": "https://github.com/nadameu/ferramentasbacenjud#readme",
+	"devDependencies": {
+		"@types/firefox-webext-browser": "^58.0.4",
+		"prettier": "^1.14.2",
+		"typescript": "^3.0.3",
+		"web-ext": "^2.9.1"
+	}
+}
