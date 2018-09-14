@@ -34,6 +34,12 @@
 		"browser_style": false,
 		"page": "options.html"
 	},
-	"permissions": ["activeTab", "storage", "tabs", "https://www3.bcb.gov.br/bacenjud2/*"],
+	"permissions": [
+		"activeTab",
+		"storage",
+		"tabs",
+		"https://www3.bcb.gov.br/bacenjud2/*",
+		"http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php"
+	],
 	"web_accessible_resources": ["*.css", "*.svg"]
 }
