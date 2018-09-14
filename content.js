@@ -37,42 +37,42 @@ function formatNumber(num) {
 /**
  * Objeto principal do programa
  */
-var Bacen = {
+class Bacen {
     /**
-     * Método utilizado
+     * Função inicial do programa
      */
-    method: '',
-    /**
-     * Página sendo exibida
-     */
-    pagina: '',
-    /**
-     * Vincula uma função a um evento
-     *
-     * @param Function Função a ser vinculada
-     * @param* mixed Outros parâmetros a serem passados à função
-     * @return Function Função a ser executada
-     */
-    bind: function (f) {
-        var args = $A(arguments);
-        args.splice(0, 1);
-        var self = this;
-        return function (e) {
-            f.apply(self, $A(arguments)
-                .concat(args)
-                .concat([this]));
-        };
-    },
+    constructor() {
+        /**
+         * Método utilizado
+         */
+        this.method = '';
+        this.submit = false;
+        this.valid = false;
+        this.buscando = false;
+        const url = new URL(location.href);
+        this.pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
+        const parametros = url.searchParams;
+        if (parametros.has('method')) {
+            this.method = parametros.get('method');
+        }
+        if (this.pagina in this && typeof this[this.pagina] === 'function') {
+            const result = this[this.pagina](this.method);
+            if (result instanceof Promise) {
+                result.catch(err => console.error(err));
+            }
+        }
+    }
     /**
      * Menu Minutas -> Incluir Minuta de Bloqueio de Valores -> Conferir dados da Minuta
-     *
-     * @param String Método utilizado pela página
      */
-    conferirDadosMinutaBVInclusao: function (method) {
+    conferirDadosMinutaBVInclusao(method) {
         if (method == 'conferirDados') {
-            var erros, msgErro = '';
+            let erros;
+            let msgErro = '';
+            const senhaJuiz = $F('senhaJuiz');
+            const btnIncluir = $F('btnIncluir');
             if ((erros = document.getElementsByClassName('msgErro')).length) {
-                $A(erros).forEach(function (erro, e) {
+                $A(erros).forEach(function (erro) {
                     erro.innerHTML = erro.innerHTML
                         .replace(/\n?•(\&nbsp;)?/g, '')
                         .replace('<b>', '&ldquo;')
@@ -82,17 +82,17 @@ var Bacen = {
                 window.alert(msgErro);
                 window.history.go(-1);
             }
-            else if ($F('senhaJuiz') && !$F('senhaJuiz').disabled) {
-                $F('senhaJuiz').focus();
+            else if (senhaJuiz && !senhaJuiz.disabled) {
+                senhaJuiz.focus();
             }
-            else if ($F('btnIncluir')) {
+            else if (btnIncluir) {
                 window.addEventListener('keypress', function (e) {
                     if (e.keyCode == 13) {
                         e.preventDefault();
                         e.stopPropagation();
-                        var evento = document.createEvent('MouseEvents');
+                        const evento = document.createEvent('MouseEvents');
                         evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
-                        $F('btnIncluir').dispatchEvent(evento);
+                        btnIncluir.dispatchEvent(evento);
                     }
                 }, true);
             }
@@ -100,93 +100,85 @@ var Bacen = {
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Menu Minutas -> Incluir Minuta de Requisição de Informações -> Conferir dados da Minuta
-     *
-     * @param String Método utilizado pela página
      */
-    conferirDadosMinutaSIInclusao: function (method) {
+    conferirDadosMinutaSIInclusao(method) {
         this.conferirDadosMinutaBVInclusao(method);
-    },
+    }
     /**
      * Janela pop-up aberta ao adicionar pessoa na tela de inclusão de minuta
      * de requisição de informações
-     *
-     * @param String Método utilizado
      */
-    consultarPessoa: function (method) {
+    consultarPessoa(method) {
         this.consultarReu(method);
-    },
+    }
     /**
      * Menu Ordens judiciais -> Consultar Ordens Judiciais por Juízo
-     *
-     * @param String Método utilizado pela página
      */
-    consultarSolicitacoesProtocoladasJuizo: function (method) {
+    consultarSolicitacoesProtocoladasJuizo(method) {
         if (method == 'editarCriteriosConsultaPorVara') {
-            if ($F('codigoVara')) {
-                $F('codigoVara').value = GM_getValue('vara');
+            const codigoVara = $F('codigoVara');
+            if (codigoVara) {
+                codigoVara.value = GM_getValue('vara');
             }
-            if ($F('operador')) {
-                $F('operador').value = GM_getValue('juiz');
+            const operador = $F('operador');
+            if (operador) {
+                operador.value = GM_getValue('juiz');
             }
         }
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Processo Judicial
-     *
-     * @param String Método utilizado pela página
      */
-    consultarSolicitacoesProtocoladasProcesso: function (method) {
+    consultarSolicitacoesProtocoladasProcesso(method) {
         if (method == 'editarCriteriosConsultaPorProcesso') {
-            if ($F('numeroProcesso')) {
-                $F('numeroProcesso').focus();
-                $F('numeroProcesso').addEventListener('change', this.bind(this.onConsultaProcessoChange), true);
-                $F('numeroProcesso').addEventListener('keypress', this.bind(this.onProcessoKeypress), true);
+            const numeroProcesso = $F('numeroProcesso');
+            if (numeroProcesso) {
+                numeroProcesso.focus();
+                numeroProcesso.addEventListener('change', () => this.onConsultaProcessoChange(numeroProcesso), true);
+                numeroProcesso.addEventListener('keypress', e => this.onProcessoKeypress(e, numeroProcesso), true);
                 document
                     .getElementsByClassName('botao')[0]
-                    .addEventListener('click', this.bind(this.onBotaoClick), true);
+                    .addEventListener('click', e => this.onBotaoClick(e), true);
             }
         }
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Protocolo Registrado no BacenJud
-     *
-     * @param String Método utilizado pela página
      */
-    consultarSolicitacoesProtocoladasProtocolo: function (method) {
+    consultarSolicitacoesProtocoladasProtocolo(method) {
         if (method == 'editarCriteriosConsultaPorProtocolo') {
-            if ($F('numeroProtocolo')) {
-                $F('numeroProtocolo').focus();
-                $F('numeroProtocolo').addEventListener('change', this.bind(this.onConsultaProtocoloChange), true);
-                $F('numeroProtocolo').addEventListener('keypress', this.bind(this.onProcessoKeypress), true);
+            const numeroProtocolo = $F('numeroProtocolo');
+            if (numeroProtocolo) {
+                numeroProtocolo.focus();
+                numeroProtocolo.addEventListener('change', () => this.onConsultaProtocoloChange(numeroProtocolo), true);
+                numeroProtocolo.addEventListener('keypress', e => this.onProcessoKeypress(e, numeroProtocolo), true);
                 document
                     .getElementsByClassName('botao')[0]
-                    .addEventListener('click', this.bind(this.onBotaoClick), true);
+                    .addEventListener('click', e => this.onBotaoClick(e), true);
             }
         }
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Janela pop-up aberta ao adicionar réu
-     *
-     * @param String Método utilizado
      */
-    consultarReu: function (method) {
+    consultarReu(method) {
         if (method == 'consultarReu') {
-            window.addEventListener('unload', function (e) {
+            window.addEventListener('unload', () => {
                 window.opener.setTimeout('processaLista();', 100);
             }, true);
-            window.addEventListener('keypress', function (e) {
+            window.addEventListener('keypress', e => {
                 if (e.keyCode == 27) {
                     window.close();
                 }
@@ -195,66 +187,103 @@ var Bacen = {
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Menu Minutas -> Incluir Minuta de Bloqueio de Valores
-     *
-     * @param String Método utilizado pela página
      */
-    criarMinutaBVInclusao: function (method) {
+    criarMinutaBVInclusao(method) {
         if (method == 'criar') {
-            if ($F('cdOperadorJuiz') && $F('cdOperadorJuiz').type != 'hidden') {
-                $F('cdOperadorJuiz').setAttribute('value', GM_getValue('juiz'));
+            const cdOperadorJuiz = $F('cdOperadorJuiz');
+            const codigoVara = $F('codigoVara');
+            const processo = $F('processo');
+            if (cdOperadorJuiz && cdOperadorJuiz.type != 'hidden') {
+                cdOperadorJuiz.setAttribute('value', GM_getValue('juiz'));
             }
-            if ($F('codigoVara') && $F('processo')) {
-                $F('codigoVara').setAttribute('value', GM_getValue('vara'));
-                $F('processo').select();
-                $F('processo').focus();
-                $F('processo').addEventListener('change', this.bind(this.onProcessoChange), true);
-                $F('processo').addEventListener('keypress', this.bind(this.onProcessoKeypress), true);
+            if (codigoVara && processo) {
+                codigoVara.setAttribute('value', GM_getValue('vara'));
+                processo.select();
+                processo.focus();
+                processo.addEventListener('change', () => this.onProcessoChange(processo), true);
+                processo.addEventListener('keypress', e => this.onProcessoKeypress(e, processo), true);
             }
         }
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Menu Minutas -> Incluir Minuta de Requisição de Informações
-     *
-     * @param String Método utilizado pela página
      */
-    criarMinutaSIInclusao: function (method) {
+    criarMinutaSIInclusao(method) {
         this.criarMinutaBVInclusao(method);
-    },
+    }
+    async dologin(_) {
+        async function obterCampo(nome) {
+            const campo = $F(nome);
+            if (campo) {
+                return campo;
+            }
+            throw new Error(`Campo ${nome} não encontrado.`);
+        }
+        const campos = new Map(await Promise.all(['unidade', 'operador', 'senha'].map(nome => obterCampo(nome).then(campo => [nome, campo]))));
+        async function vincularCamposPreferencia(campo, nomePref) {
+            let preenchido = false;
+            campo.addEventListener('change', () => {
+                const promise = campo.value.trim() === ''
+                    ? browser.storage.local.remove(nomePref)
+                    : browser.storage.local.set({ [nomePref]: campo.value });
+                promise.catch(err => console.error(err));
+            });
+            const prefs = await browser.storage.local.get(nomePref);
+            if (nomePref in prefs) {
+                campo.value = prefs[nomePref];
+                preenchido = true;
+            }
+            return { campo, preenchido };
+        }
+        const [unidade, operador, senha] = ['unidade', 'operador', 'senha'].map(nome => campos.get(nome));
+        const informacoes = new Map(await Promise.all([{ campo: unidade, pref: 'unidade' }, { campo: operador, pref: 'login' }].map(({ campo, pref }) => vincularCamposPreferencia(campo, pref).then(info => [pref, info]))));
+        const [infoUnidade, infoOperador] = ['unidade', 'login'].map(nome => informacoes.get(nome));
+        function focarCampoVazio() {
+            if (infoUnidade.preenchido) {
+                if (infoOperador.preenchido) {
+                    senha.focus();
+                }
+                else {
+                    operador.focus();
+                }
+            }
+            else {
+                unidade.focus();
+            }
+        }
+        window.addEventListener('load', focarCampoVazio, { once: true });
+        browser.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== 'local')
+                return;
+            const changed = Object.keys(changes);
+            changed.forEach(key => {
+                if (informacoes.has(key)) {
+                    const info = informacoes.get(key);
+                    info.campo.value =
+                        changes[key].newValue || '';
+                }
+            });
+        });
+    }
     /**
      * Obtém informações do processo e preenche automaticamente os campos
-     *
-     * @param String Número do processo
-     * @param String Modo de preenchimento
      */
-    getInfo: function (numproc, modo) {
-        var estado = 'SC';
-        switch (GM_getValue('secao')) {
-            case '70':
-                estado = 'PR';
-                break;
-            case '71':
-                estado = 'RS';
-                break;
-            case '72':
-            default:
-                estado = 'SC';
-                break;
-        }
-        if (numproc.length != 10 && numproc.length != 15 && numproc.length != 20) {
+    getInfo(numproc, modo) {
+        const estados = new Map([['70', 'PR'], ['71', 'RS'], ['72', 'SC']]);
+        const estado = estados.get(GM_getValue('secao')) || 'SC';
+        if (![10, 15, 20].includes(numproc.length)) {
             throw new Error('Número de processo inválido: ' + numproc);
         }
-        else if (modo != 'consulta' && modo != 'preencher') {
-            throw new Error('Modo inválido: ' + modo);
-        }
-        var todas_partes = modo == 'preencher' ? 'S' : 'N';
+        const todas_partes = modo == 'preencher' ? 'S' : 'N';
         // WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
-        var options = {
+        const self = this;
+        const options = {
             method: 'POST',
             url: 'http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php',
             data: `<?xml version="1.0" encoding="UTF-8"?>
@@ -268,28 +297,29 @@ var Bacen = {
         <todos_valores>N</todos_valores>
     </soapenv:Body>
 </soapenv:Envelope>`,
-            onload: this.bind(this.preencher, modo),
+            onload: function () {
+                return self.preencher(this, modo);
+            },
             headers: {
                 SOAPAction: 'consulta_processual_ws_wsdl#ws_consulta_processo',
             },
         };
         GM_xmlhttpRequest(options);
-    },
+    }
     /**
      * Retorna o número do processo devidamente formatado
-     *
-     * @param String Número do processo
-     * @return false|String Número do processo
      */
-    getNumproc: function (numproc) {
-        (secao = GM_getValue('secao')),
-            (subsecao = GM_getValue('subsecao')),
-            (ramo = '4'),
-            (tribunal = '04');
-        numproc = numproc.replace(/[^0-9\/]/g, '');
+    getNumproc(input) {
+        const secao = GM_getValue('secao');
+        const subsecao = GM_getValue('subsecao');
+        const ramo = '4';
+        const tribunal = '04';
+        let ano;
+        let numero;
+        const numproc = input.replace(/[^0-9\/]/g, '');
         if (/^(\d{2}|\d{4})\/\d{2,9}$/.test(numproc)) {
-            var tmp = numproc.split('/');
-            var ano = tmp[0];
+            const tmp = numproc.split('/');
+            ano = Number(tmp[0]);
             if (ano < 50) {
                 ano = Number(ano) + 2000;
             }
@@ -297,16 +327,16 @@ var Bacen = {
                 ano = Number(ano) + 1900;
             }
             if (ano >= 2010) {
-                var numero = tmp[1].substr(0, tmp[1].length - 2);
+                numero = tmp[1].substr(0, tmp[1].length - 2);
             }
             else {
-                var numero = tmp[1].substr(0, tmp[1].length - 1);
+                numero = tmp[1].substr(0, tmp[1].length - 1);
             }
         }
         else if (numproc.match('/')) {
             return false;
         }
-        else if (numproc.length == 10 || numproc.length == 15 || numproc.length == 20) {
+        else if ([10, 15, 20].includes(numproc.length)) {
             return numproc;
         }
         else {
@@ -315,33 +345,31 @@ var Bacen = {
         while (numero.length < 7) {
             numero = '0' + numero;
         }
-        var r1 = Number(numero) % 97;
-        var r2 = Number('' + r1 + ano + ramo + tribunal) % 97;
-        var r3 = Number('' + r2 + secao + subsecao + '00') % 97;
-        var dv = String(98 - r3);
+        const r1 = Number(numero) % 97;
+        const r2 = Number('' + r1 + ano + ramo + tribunal) % 97;
+        const r3 = Number('' + r2 + secao + subsecao + '00') % 97;
+        let dv = String(98 - r3);
         while (dv.length < 2)
             dv = '0' + dv;
-        var numproc = '' + numero + dv + ano + ramo + tribunal + secao + subsecao;
-        return numproc;
-    },
+        return [numero, dv, ano, ramo, tribunal, secao, subsecao].map(String).join('');
+    }
     /**
      * Retorna o número do protocolo
-     *
-     * @param String Número do protocolo
-     * @return false|String Número do protocolo
      */
-    getProtocolo: function (protocolo) {
-        protocolo = protocolo.replace(/[^0-9\/]/g, '');
+    getProtocolo(input) {
+        let protocolo = input.replace(/[^0-9\/]/g, '');
+        let ano;
+        let numero;
         if (/^(\d{2}|\d{4})\/\d{1,10}$/.test(protocolo)) {
-            var tmp = protocolo.split('/');
-            var ano = tmp[0];
+            const tmp = protocolo.split('/');
+            ano = Number(tmp[0]);
             if (ano < 50) {
                 ano = Number(ano) + 2000;
             }
             else if (ano >= 50 && ano < 100) {
                 ano = Number(ano) + 1900;
             }
-            var numero = tmp[1];
+            numero = Number(tmp[1]);
         }
         else if (protocolo.match('/')) {
             return false;
@@ -350,29 +378,27 @@ var Bacen = {
             return protocolo;
         }
         else if (protocolo.length >= 1 && protocolo.length <= 10) {
-            var ano = new Date().getFullYear();
-            var numero = protocolo;
+            ano = new Date().getFullYear();
+            numero = Number(protocolo);
         }
         else {
             return false;
         }
         while (protocolo.length < 10)
             protocolo = '0' + protocolo;
-        return ano + protocolo;
-    },
+        return `${ano}${protocolo}`;
+    }
     /**
      * Minuta conferida e incluída
-     *
-     * @param String Método
      */
-    incluirMinutaBV: function (method) {
+    incluirMinutaBV(method) {
         if (method == 'incluir') {
-            if (document.getElementsByClassName('fundoPadraoAClaro2').length) {
-                var estaPagina = this.pagina;
+            const fundosPadraoAClaro2 = document.getElementsByClassName('fundoPadraoAClaro2');
+            if (fundosPadraoAClaro2.length) {
+                const estaPagina = this.pagina;
                 window.setTimeout(function () {
-                    if (window.confirm(document
-                        .getElementsByClassName('fundoPadraoAClaro2')[0]
-                        .rows[0].cells[0].textContent.split(/\n/)[2] + '\n\nDeseja incluir nova minuta?')) {
+                    if (window.confirm((fundosPadraoAClaro2[0].rows[0].cells[0].textContent || '').split(/\n/)[2] +
+                        '\n\nDeseja incluir nova minuta?')) {
                         if (estaPagina == 'incluirMinutaBV') {
                             window.location.href = 'criarMinutaBVInclusao.do?method=criar';
                         }
@@ -386,65 +412,40 @@ var Bacen = {
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Minuta conferida e incluída
-     *
-     * @param String Método
      */
-    incluirMinutaSI: function (method) {
+    incluirMinutaSI(method) {
         this.incluirMinutaBV(method);
-    },
-    /**
-     * Função inicial do programa
-     */
-    init: function () {
-        this.pagina = window.location.pathname.split('/bacenjud2/')[1].split('.')[0];
-        var parametros = window.location.search.split('?');
-        if (parametros.length == 2) {
-            parametros = parametros[1].split('&');
-            var self = this;
-            parametros.forEach(function (parametro, p) {
-                var fv = parametro.split('=');
-                if (fv[0] == 'method') {
-                    self.method = fv[1];
-                }
-            });
-        }
-        if (this[this.pagina])
-            this[this.pagina](this.method);
-    },
+    }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Processo Judicial -> Botão "Consultar" -> Evento "click"
-     *
-     * @param Event Evento disparado
-     * @param HTMLElement Elemento que disparou o evento
      */
-    onBotaoClick: function (e, input) {
+    onBotaoClick(e) {
         e.preventDefault();
         e.stopPropagation();
         this.submit = true;
         if (this.submit && this.valid && !this.buscando) {
-            if ($F('numeroProcesso')) {
-                $F('numeroProcesso').select();
-                $F('numeroProcesso').focus();
+            const numeroProcesso = $F('numeroProcesso');
+            const numeroProtocolo = $F('numeroProtocolo');
+            if (numeroProcesso) {
+                numeroProcesso.select();
+                numeroProcesso.focus();
             }
-            else if ($F('numeroProtocolo')) {
-                $F('numeroProtocolo').select();
-                $F('numeroProtocolo').focus();
+            else if (numeroProtocolo) {
+                numeroProtocolo.select();
+                numeroProtocolo.focus();
             }
             $$('form')[0].submit();
         }
-    },
+    }
     /**
      * Função que atende ao evento change do Número do Processo
-     *
-     * @param Event Evento disparado
-     * @param HTMLElement Elemento que disparou o evento
      */
-    onConsultaProcessoChange: function (e, input) {
-        var valor = input.value.toString();
-        var numproc = this.getNumproc(valor);
+    onConsultaProcessoChange(input) {
+        const valor = input.value.toString();
+        const numproc = this.getNumproc(valor);
         if (valor) {
             if (valor.match('/') && numproc) {
                 input.value = 'Carregando...';
@@ -467,16 +468,13 @@ var Bacen = {
                 }, 100);
             }
         }
-    },
+    }
     /**
      * Função que atende ao evento change do Número do Protocolo
-     *
-     * @param Event Evento disparado
-     * @param HTMLElement Elemento que disparou o evento
      */
-    onConsultaProtocoloChange: function (e, input) {
-        var valor = input.value.toString();
-        var protocolo = this.getProtocolo(valor);
+    onConsultaProtocoloChange(input) {
+        const valor = input.value.toString();
+        const protocolo = this.getProtocolo(valor);
         if (valor && protocolo) {
             input.value = protocolo;
             this.valid = true;
@@ -489,17 +487,14 @@ var Bacen = {
                 input.focus();
             }, 100);
         }
-    },
+    }
     /**
      * Função que atende ao evento change do Número do Processo
-     *
-     * @param Event Evento disparado
-     * @param HTMLElement Elemento que disparou o evento
      */
-    onProcessoChange: function (e, input) {
-        var valor = input.value.toString();
+    onProcessoChange(input) {
+        const valor = input.value.toString();
         $$('form')[0].reset();
-        var reus = $A($F('reus').getElementsByTagName('option'));
+        const reus = $A($F('reus').getElementsByTagName('option'));
         reus.forEach(function (reu) {
             reu.selected = true;
         });
@@ -513,7 +508,7 @@ var Bacen = {
         }
         if (valor) {
             input.value = 'Carregando...';
-            var numproc = this.getNumproc(valor);
+            const numproc = this.getNumproc(valor);
             if (numproc) {
                 this.buscando = {
                     valor: valor,
@@ -529,14 +524,11 @@ var Bacen = {
                 }, 100);
             }
         }
-    },
+    }
     /**
      * Função que atende ao evento keypress do campo Processo
-     *
-     * @param Event Evento disparado
-     * @param HTMLElement Elemento que disparou o evento
      */
-    onProcessoKeypress: function (e, input) {
+    onProcessoKeypress(e, input) {
         if (e.keyCode == 9 || e.keyCode == 13) {
             e.preventDefault();
             e.stopPropagation();
@@ -553,15 +545,16 @@ var Bacen = {
                 }
             }
         }
-    },
+    }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Processo Judicial -> Consultar
      *
      * @param String Método utilizado pela página
      */
-    pesquisarPorProcesso: function (method) {
+    pesquisarPorProcesso(method) {
         if (method == 'pesquisarPorProcesso') {
-            var erros, msgErro = '';
+            let erros;
+            let msgErro = '';
             if ((erros = document.getElementsByClassName('msgErro')).length) {
                 $A(erros).forEach(function (erro) {
                     erro.innerHTML = erro.innerHTML
@@ -574,7 +567,9 @@ var Bacen = {
                 history.go(-1);
             }
             else if (document.getElementsByClassName('pagebanner').length) {
-                var registros = document.getElementsByClassName('pagebanner')[0].textContent.match(/^\d+/);
+                const registros = document
+                    .getElementsByClassName('pagebanner')[0]
+                    .textContent.match(/^\d+/);
                 if (registros == 1) {
                     window.location.href = document
                         .getElementById('ordem')
@@ -585,15 +580,14 @@ var Bacen = {
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Protocolo Registrado no BacenJud -> Consultar
-     *
-     * @param String Método utilizado pela página
      */
-    pesquisarPorProtocolo: function (method) {
+    pesquisarPorProtocolo(method) {
         if (method == 'pesquisarPorProtocolo') {
-            var erros, msgErro = '';
+            let erros;
+            let msgErro = '';
             if ((erros = document.getElementsByClassName('msgErro')).length) {
                 $A(erros).forEach(function (erro) {
                     erro.innerHTML = erro.innerHTML
@@ -609,7 +603,7 @@ var Bacen = {
         else {
             throw new Error('Método desconhecido: ' + method);
         }
-    },
+    }
     /**
      * Preenche os campos com as informações obtidas
      *
@@ -617,32 +611,33 @@ var Bacen = {
      * @param String Modo de preenchimento
      * @param Object Opções passadas ao objeto
      */
-    preencher: function (obj, modo, options) {
+    preencher(obj, modo) {
         if (modo != 'preencher' && modo != 'consulta') {
             throw new Error('Modo inválido: ' + modo);
         }
-        var parser = new window.DOMParser();
-        var ret = parser.parseFromString(obj.responseText, 'text/xml').querySelector('return')
+        const parser = new DOMParser();
+        const ret = parser.parseFromString(obj.responseText, 'text/xml').querySelector('return')
             .textContent;
-        var processo = parser.parseFromString(ret, 'text/xml');
-        var erros = [];
+        const processo = parser.parseFromString(ret, 'text/xml');
+        const erros = [];
         Array.prototype.slice.call(processo.querySelectorAll('Erro')).forEach(function (erro) {
             erros.push(erro.textContent);
         });
-        var el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
-        if ($F(el)) {
+        const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
+        const campoProcesso = $F(el);
+        if (campoProcesso) {
             if (erros.length) {
                 this.valid = false;
                 window.alert(erros.join('\n'));
-                $F(el).value = this.buscando.valor;
-                delete this.buscando;
-                $F(el).select();
-                $F(el).focus();
+                campoProcesso.value = this.buscando.valor;
+                this.buscando = false;
+                campoProcesso.select();
+                campoProcesso.focus();
             }
             else {
                 this.valid = true;
-                delete this.buscando;
-                $F(el).value = processo
+                this.buscando = false;
+                campoProcesso.value = processo
                     .querySelector('Processo Processo')
                     .textContent.replace(/[^0-9]/g, '');
                 if (modo == 'preencher') {
@@ -654,12 +649,12 @@ var Bacen = {
                         $F('idTipoAcao').value = 4;
                     }
                     if ($F('valorUnico') && processo.querySelector('ValCausa')) {
-                        var valorCausa = Number(processo.querySelector('ValCausa').textContent);
+                        const valorCausa = Number(processo.querySelector('ValCausa').textContent);
                         if (!isNaN(valorCausa)) {
                             $F('valorUnico').value = formatNumber(valorCausa);
                         }
                     }
-                    var reus = [];
+                    const reus = [];
                     Array.prototype.slice
                         .call(processo.querySelectorAll('Partes Parte'))
                         .forEach(function (parte) {
@@ -689,13 +684,11 @@ var Bacen = {
                 }
             }
         }
-    },
+    }
     /**
      * Adiciona os réus um a um
-     *
-     * @param? Array Réus
      */
-    processaLista: function () {
+    processaLista() {
         if (arguments.length) {
             this.reus = arguments[0];
             window.wrappedJSObject.processaLista = function () {
@@ -703,13 +696,13 @@ var Bacen = {
             };
         }
         if (this.reus.length) {
-            var documento = this.reus[0].toString();
+            const documento = this.reus[0].toString();
             this.reus.splice(0, 1);
             $('cpfCnpj').value = documento;
             $('botaoIncluirCpfCnpj').disabled = false;
             $('botaoIncluirCpfCnpj').focus();
             (function (window) {
-                var evento = document.createEvent('MouseEvents');
+                const evento = document.createEvent('MouseEvents');
                 evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
                 $('botaoIncluirCpfCnpj').dispatchEvent(evento);
             })(window.wrappedJSObject);
@@ -721,6 +714,6 @@ var Bacen = {
             $F('valorUnico').select();
             $F('valorUnico').focus();
         }
-    },
-};
-Bacen.init();
+    }
+}
+new Bacen();
