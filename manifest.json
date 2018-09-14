@@ -17,13 +17,11 @@
 			"16": "ferramentasbacenjud.svg",
 			"32": "ferramentasbacenjud.svg"
 		},
-		"default_title": "Ferramentas e-Proc"
+		"default_title": "Ferramentas BacenJud"
 	},
 	"content_scripts": [
 		{
-			"matches": [
-				"https://www3.bcb.gov.br/bacenjud2/*"
-			],
+			"matches": ["https://www3.bcb.gov.br/bacenjud2/*"],
 			"js": ["content.js"],
 			"run_at": "document_end"
 		}
@@ -32,15 +30,10 @@
 		"48": "ferramentasbacenjud.svg",
 		"96": "ferramentasbacenjud.svg"
 	},
-	"options_ui": { "page": "options.html" },
-	"permissions": [
-		"activeTab",
-		"storage",
-		"tabs",
-		"https://www3.bcb.gov.br/bacenjud2/*"
-	],
-	"web_accessible_resources": [
-		"*.css",
-		"*.svg",
-	]
+	"options_ui": {
+		"browser_style": false,
+		"page": "options.html"
+	},
+	"permissions": ["activeTab", "storage", "tabs", "https://www3.bcb.gov.br/bacenjud2/*"],
+	"web_accessible_resources": ["*.css", "*.svg"]
 }
