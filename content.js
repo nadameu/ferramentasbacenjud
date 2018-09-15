@@ -15,6 +15,7 @@ class Bacen {
         this.submit = false;
         this.valid = true;
         this.buscando = false;
+        this.reus = [];
         this.secao = Nothing;
         this.subsecao = Nothing;
         const url = new URL(location.href);
@@ -40,35 +41,19 @@ class Bacen {
      */
     conferirDadosMinutaBVInclusao(method) {
         assertStrictEquals('conferirDados', method);
-        let erros;
-        let msgErro = '';
-        const senhaJuiz = query('[name="senhaJuiz"]');
-        const btnIncluir = query('[name="btnIncluir"]');
-        if ((erros = document.getElementsByClassName('msgErro')).length) {
-            Array.from(erros).forEach(function (erro) {
-                erro.innerHTML = erro.innerHTML
-                    .replace(/\n?•(\&nbsp;)?/g, '')
-                    .replace('<b>', '&ldquo;')
-                    .replace('</b>', '&rdquo;');
-                msgErro += erro.textContent + '\n';
-            });
-            alert(msgErro);
-            window.history.go(-1);
-        }
-        else if (senhaJuiz && !senhaJuiz.disabled) {
+        if (this.tratarErros())
+            return;
+        liftA1(queryInputByName('senhaJuiz').filter(senhaJuiz => !senhaJuiz.disabled), senhaJuiz => {
             senhaJuiz.focus();
-        }
-        else if (btnIncluir) {
-            window.addEventListener('keypress', function (e) {
+        }).altL(() => liftA1(query('[name="btnIncluir"]'), btnIncluir => {
+            window.addEventListener('keypress', e => {
                 if (e.keyCode == 13) {
                     e.preventDefault();
                     e.stopPropagation();
-                    const evento = document.createEvent('MouseEvents');
-                    evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
-                    btnIncluir.dispatchEvent(evento);
+                    btnIncluir.click();
                 }
             }, true);
-        }
+        }));
     }
     /**
      * Menu Minutas -> Incluir Minuta de Requisição de Informações -> Conferir dados da Minuta
@@ -83,79 +68,76 @@ class Bacen {
     consultarPessoa(method) {
         this.consultarReu(method);
     }
+    consultarSolicitacoesProtocoladas(nomeInput, nomeMetodoOnChange) {
+        liftA2(queryInputByName(nomeInput), query('.botao'), (input, botao) => {
+            input.focus();
+            input.addEventListener('change', () => this[nomeMetodoOnChange](input), true);
+            input.addEventListener('keypress', e => this.onProcessoKeypress(e, input), true);
+            botao.addEventListener('click', e => this.onBotaoClick(e), true);
+        });
+    }
+    /**
+     * Menu Ordens judiciais -> Consultar Ordens Judiciais protocolizadas por Assessores
+     */
+    consultarSolicitacoesProtocoladasAssessor(method) {
+        assertStrictEquals('editarCriteriosConsultaPorAssessor', method);
+        queryInputByName('dataInicial').map(input => {
+            input.focus();
+        });
+        vincular('cdOperadorAssessor', 'login');
+        vincular('cdOperadorJuiz', 'juiz');
+        function vincular(nomeInput, nomePreferencia) {
+            liftA1(queryInputByName(nomeInput), input => {
+                Preferencias.vincularInput(input, nomePreferencia, {
+                    focarSeVazio: true,
+                    salvarAoPreencher: false,
+                });
+            });
+        }
+    }
     /**
      * Menu Ordens judiciais -> Consultar Ordens Judiciais por Juízo
      */
     consultarSolicitacoesProtocoladasJuizo(method) {
-        if (method == 'editarCriteriosConsultaPorVara') {
-            const codigoVara = query('[name="codigoVara"]');
-            if (codigoVara) {
-                codigoVara.value = GM_getValue('vara');
-            }
-            const operador = query('[name="operador"]');
-            if (operador) {
-                operador.value = GM_getValue('juiz');
-            }
-        }
-        else {
-            throw new Error('Método desconhecido: ' + method);
+        assertStrictEquals('editarCriteriosConsultaPorVara', method);
+        vincular('codigoVara', 'vara');
+        vincular('operador', 'juiz');
+        function vincular(nomeInput, nomePreferencia) {
+            liftA1(queryInputByName(nomeInput), input => {
+                Preferencias.vincularInput(input, nomePreferencia, {
+                    focarSeVazio: true,
+                    salvarAoPreencher: false,
+                });
+            });
         }
     }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Processo Judicial
      */
     consultarSolicitacoesProtocoladasProcesso(method) {
-        if (method == 'editarCriteriosConsultaPorProcesso') {
-            const numeroProcesso = query('[name="numeroProcesso"]');
-            if (numeroProcesso) {
-                numeroProcesso.focus();
-                numeroProcesso.addEventListener('change', () => this.onConsultaProcessoChange(numeroProcesso), true);
-                numeroProcesso.addEventListener('keypress', e => this.onProcessoKeypress(e, numeroProcesso), true);
-                document
-                    .getElementsByClassName('botao')[0]
-                    .addEventListener('click', e => this.onBotaoClick(e), true);
-            }
-        }
-        else {
-            throw new Error('Método desconhecido: ' + method);
-        }
+        assertStrictEquals('editarCriteriosConsultaPorProcesso', method);
+        this.consultarSolicitacoesProtocoladas('numeroProcesso', 'onConsultaProcessoChange');
     }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Protocolo Registrado no BacenJud
      */
     consultarSolicitacoesProtocoladasProtocolo(method) {
-        if (method == 'editarCriteriosConsultaPorProtocolo') {
-            const numeroProtocolo = query('[name="numeroProtocolo"]');
-            if (numeroProtocolo) {
-                numeroProtocolo.focus();
-                numeroProtocolo.addEventListener('change', () => this.onConsultaProtocoloChange(numeroProtocolo), true);
-                numeroProtocolo.addEventListener('keypress', e => this.onProcessoKeypress(e, numeroProtocolo), true);
-                document
-                    .getElementsByClassName('botao')[0]
-                    .addEventListener('click', e => this.onBotaoClick(e), true);
-            }
-        }
-        else {
-            throw new Error('Método desconhecido: ' + method);
-        }
+        assertStrictEquals('editarCriteriosConsultaPorProtocolo', method);
+        this.consultarSolicitacoesProtocoladas('numeroProtocolo', 'onConsultaProtocoloChange');
     }
     /**
      * Janela pop-up aberta ao adicionar réu
      */
     consultarReu(method) {
-        if (method == 'consultarReu') {
-            window.addEventListener('unload', () => {
-                window.opener.setTimeout('processaLista();', 100);
-            }, true);
-            window.addEventListener('keypress', e => {
-                if (e.keyCode == 27) {
-                    window.close();
-                }
-            }, true);
-        }
-        else {
-            throw new Error('Método desconhecido: ' + method);
-        }
+        assertStrictEquals('consultarReu', method);
+        window.addEventListener('unload', () => {
+            window.opener.setTimeout('processaLista();', 100);
+        }, true);
+        window.addEventListener('keypress', e => {
+            if (e.keyCode == 27) {
+                window.close();
+            }
+        }, true);
     }
     /**
      * Menu Minutas -> Incluir Minuta de Bloqueio de Valores
@@ -216,7 +198,7 @@ class Bacen {
     /**
      * Obtém informações do processo e preenche automaticamente os campos
      */
-    getInfo(numproc, modo) {
+    async getInfo(numproc, modo) {
         const estados = new Map([['70', 'PR'], ['71', 'RS'], ['72', 'SC']]);
         const estado = estados.get(this.secao.getOrElse('')) || 'SC';
         if (![10, 15, 20].includes(numproc.length)) {
@@ -224,7 +206,7 @@ class Bacen {
         }
         const todas_partes = modo == 'preencher' ? 'S' : 'N';
         // WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
-        fetch('http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php', {
+        const response = await fetch('http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php', {
             method: 'POST',
             headers: new Headers({
                 SOAPAction: 'consulta_processual_ws_wsdl#ws_consulta_processo',
@@ -240,40 +222,13 @@ class Bacen {
 							<todos_valores>N</todos_valores>
 					</soapenv:Body>
 			</soapenv:Envelope>`,
-        })
-            .then(response => {
-            if (!response.ok) {
-                console.error(response);
-                throw new Error('Não foi possível obter os dados do processo.');
-            }
-            return response.text();
-        })
-            .then(text => {
-            this.preencher(text, modo);
         });
-        // 		const self = this;
-        // 		const options = {
-        // 			method: 'POST',
-        // 			url: 'http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php',
-        // 			data: `<?xml version="1.0" encoding="UTF-8"?>
-        // <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
-        //     <soapenv:Header/>
-        //     <soapenv:Body>
-        //         <num_proc>${numproc}</num_proc>
-        //         <uf>${estado}</uf>
-        //         <todas_fases>N</todas_fases>
-        //         <todas_partes>${todas_partes}</todas_partes>
-        //         <todos_valores>N</todos_valores>
-        //     </soapenv:Body>
-        // </soapenv:Envelope>`,
-        // 			onload: function() {
-        // 				return self.preencher(this, modo);
-        // 			},
-        // 			headers: {
-        // 				SOAPAction: 'consulta_processual_ws_wsdl#ws_consulta_processo',
-        // 			},
-        // 		};
-        // 		GM_xmlhttpRequest(options);
+        if (!response.ok) {
+            console.error(response);
+            throw new Error('Não foi possível obter os dados do processo.');
+        }
+        const text = await response.text();
+        this.preencher(text, modo);
     }
     /**
      * Retorna o número do processo devidamente formatado
@@ -312,79 +267,68 @@ class Bacen {
         else {
             return { ok: false, motivo: 'erroDigitacao', valorInformado: input };
         }
-        function padLeft(size, number) {
-            let result = String(number);
-            while (result.length < size) {
-                result = `0${result}`;
-            }
-            return result;
-        }
     }
     /**
      * Retorna o número do protocolo
      */
     getProtocolo(input) {
-        let protocolo = input.replace(/[^0-9\/]/g, '');
-        let ano;
-        let numero;
+        const protocolo = input.replace(/[^0-9\/]/g, '');
         if (/^(\d{2}|\d{4})\/\d{1,10}$/.test(protocolo)) {
-            const tmp = protocolo.split('/');
-            ano = Number(tmp[0]);
+            const [anoDigitado, numeroDigitado] = protocolo.split('/');
+            let ano = Number(anoDigitado);
             if (ano < 50) {
-                ano = Number(ano) + 2000;
+                ano = ano + 2000;
             }
             else if (ano >= 50 && ano < 100) {
-                ano = Number(ano) + 1900;
+                ano = ano + 1900;
             }
-            numero = Number(tmp[1]);
+            const numero = Number(numeroDigitado);
+            return { ok: true, valor: `${(padLeft(4, ano), padLeft(10, numero))}` };
         }
         else if (protocolo.match('/')) {
-            return false;
+            return { ok: false, motivo: 'erroDigitacaoAbreviada', valorInformado: input };
         }
         else if (protocolo.length == 14) {
-            return protocolo;
+            return { ok: true, valor: protocolo };
         }
         else if (protocolo.length >= 1 && protocolo.length <= 10) {
-            ano = new Date().getFullYear();
-            numero = Number(protocolo);
+            const ano = new Date().getFullYear();
+            const numero = Number(protocolo);
+            return { ok: true, valor: `${padLeft(4, ano)}${padLeft(10, numero)}` };
         }
         else {
-            return false;
+            return { ok: false, motivo: 'erroDigitacao', valorInformado: input };
         }
-        while (protocolo.length < 10)
-            protocolo = '0' + protocolo;
-        return `${ano}${protocolo}`;
+    }
+    incluirMinuta(tipoMinuta, method) {
+        assertStrictEquals('incluir', method);
+        const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
+        liftA1(query('fundoPadraoAClaro2')
+            .mapNullable(tbl => tbl.rows[0])
+            .mapNullable(row => row.cells[0])
+            .mapNullable(cell => cell.textContent)
+            .map(txt => txt.split(/\n/))
+            .filter(xs => xs.length > 2)
+            .map(xs => xs[2])
+            .map(txt => [txt, '', 'Deseja incluir nova minuta?'].join('\n')), msg => {
+            window.setTimeout(() => {
+                if (window.confirm(msg)) {
+                    location.href = paginaInclusao;
+                }
+            }, 0);
+        });
     }
     /**
      * Minuta conferida e incluída
      */
     incluirMinutaBV(method) {
-        if (method == 'incluir') {
-            const fundosPadraoAClaro2 = document.getElementsByClassName('fundoPadraoAClaro2');
-            if (fundosPadraoAClaro2.length) {
-                const estaPagina = this.pagina;
-                window.setTimeout(function () {
-                    if (window.confirm((fundosPadraoAClaro2[0].rows[0].cells[0].textContent || '').split(/\n/)[2] +
-                        '\n\nDeseja incluir nova minuta?')) {
-                        if (estaPagina == 'incluirMinutaBV') {
-                            window.location.href = 'criarMinutaBVInclusao.do?method=criar';
-                        }
-                        else if (estaPagina == 'incluirMinutaSI') {
-                            window.location.href = 'criarMinutaSIInclusao.do?method=criar';
-                        }
-                    }
-                }, 0);
-            }
-        }
-        else {
-            throw new Error('Método desconhecido: ' + method);
-        }
+        this.incluirMinuta('BV', method);
     }
     /**
      * Minuta conferida e incluída
      */
     incluirMinutaSI(method) {
-        this.incluirMinutaBV(method);
+        this.incluirMinuta('SI', method);
     }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Processo Judicial -> Botão "Consultar" -> Evento "click"
@@ -394,35 +338,29 @@ class Bacen {
         e.stopPropagation();
         this.submit = true;
         if (this.submit && this.valid && !this.buscando) {
-            const numeroProcesso = query('[name="numeroProcesso"]');
-            const numeroProtocolo = query('[name="numeroProtocolo"]');
-            if (numeroProcesso) {
-                numeroProcesso.select();
-                numeroProcesso.focus();
-            }
-            else if (numeroProtocolo) {
-                numeroProtocolo.select();
-                numeroProtocolo.focus();
-            }
-            queryAll('form')[0].submit();
+            liftA2(queryInputByName('numeroProcesso').alt(queryInputByName('numeroProtocolo')), query('form'), (input, form) => {
+                input.select();
+                input.focus();
+                form.submit();
+            });
         }
     }
     /**
      * Função que atende ao evento change do Número do Processo
      */
     onConsultaProcessoChange(input) {
-        const valor = input.value.toString();
+        const valor = input.value;
         const numproc = this.getNumproc(valor);
         if (valor) {
-            if (valor.match('/') && numproc) {
+            if (valor.match('/') && numproc.ok) {
                 input.value = 'Carregando...';
                 this.buscando = {
                     valor: valor,
                 };
-                this.getInfo(numproc, 'consulta');
+                this.getInfo(numproc.valor, 'consulta');
             }
-            else if (numproc) {
-                input.value = numproc;
+            else if (numproc.ok) {
+                input.value = numproc.valor;
                 this.valid = true;
             }
             else {
@@ -440,10 +378,10 @@ class Bacen {
      * Função que atende ao evento change do Número do Protocolo
      */
     onConsultaProtocoloChange(input) {
-        const valor = input.value.toString();
+        const valor = input.value;
         const protocolo = this.getProtocolo(valor);
-        if (valor && protocolo) {
-            input.value = protocolo;
+        if (valor && protocolo.ok) {
+            input.value = protocolo.valor;
             this.valid = true;
         }
         else if (valor) {
@@ -531,55 +469,29 @@ class Bacen {
      * @param String Método utilizado pela página
      */
     pesquisarPorProcesso(method) {
-        if (method == 'pesquisarPorProcesso') {
-            let erros;
-            let msgErro = '';
-            if ((erros = document.getElementsByClassName('msgErro')).length) {
-                Array.from(erros).forEach(function (erro) {
-                    erro.innerHTML = erro.innerHTML
-                        .replace(/\n?•(\&nbsp;)?/g, '')
-                        .replace('<b>', '&ldquo;')
-                        .replace('</b>', '&rdquo;');
-                    msgErro += erro.textContent + '\n';
-                });
-                alert(msgErro);
-                history.go(-1);
+        assertStrictEquals('pesquisarPorProcesso', method);
+        if (this.tratarErros())
+            return;
+        liftA2(query('.pagebanner')
+            .mapNullable(p => p.textContent)
+            .mapNullable(txt => txt.match(/^\d+/))
+            .map(xs => xs[0])
+            .map(Number), query('table#ordem')
+            .mapNullable(tbl => tbl.rows[1])
+            .mapNullable(row => row.cells[3])
+            .chain(cell => query('a', cell)), (registros, link) => {
+            if (registros === 1) {
+                location.href = link.href;
             }
-            else if (document.getElementsByClassName('pagebanner').length) {
-                const registros = (document.getElementsByClassName('pagebanner')[0].textContent || '').match(/^\d+/);
-                if (registros == 1) {
-                    window.location.href = document
-                        .getElementById('ordem')
-                        .rows[1].cells[3].getElementsByTagName('a')[0].href;
-                }
-            }
-        }
-        else {
-            throw new Error('Método desconhecido: ' + method);
-        }
+        });
     }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Protocolo Registrado no BacenJud -> Consultar
      */
     pesquisarPorProtocolo(method) {
-        if (method == 'pesquisarPorProtocolo') {
-            let erros;
-            let msgErro = '';
-            if ((erros = document.getElementsByClassName('msgErro')).length) {
-                Array.from(erros).forEach(function (erro) {
-                    erro.innerHTML = erro.innerHTML
-                        .replace(/\n?•(\&nbsp;)?/g, '')
-                        .replace('<b>', '&ldquo;')
-                        .replace('</b>', '&rdquo;');
-                    msgErro += erro.textContent + '\n';
-                });
-                alert(msgErro);
-                history.go(-1);
-            }
-        }
-        else {
-            throw new Error('Método desconhecido: ' + method);
-        }
+        assertStrictEquals('pesquisarPorProtocolo', method);
+        if (this.tratarErros())
+            return;
     }
     /**
      * Preenche os campos com as informações obtidas
@@ -662,31 +574,46 @@ class Bacen {
      * Adiciona os réus um a um
      */
     processaLista(reus) {
-        if (arguments.length) {
-            this.reus = arguments[0];
+        if (reus !== undefined) {
+            this.reus = reus;
+            const self = this;
             window.wrappedJSObject.processaLista = function () {
-                Bacen.processaLista.apply(Bacen, []);
+                self.processaLista.apply(self, []);
             };
         }
         if (this.reus.length) {
-            const documento = this.reus[0].toString();
-            this.reus.splice(0, 1);
-            query('#cpfCnpj').value = documento;
-            query('#botaoIncluirCpfCnpj').disabled = false;
-            query('#botaoIncluirCpfCnpj').focus();
-            (function (window) {
-                const evento = document.createEvent('MouseEvents');
-                evento.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
-                query('#botaoIncluirCpfCnpj').dispatchEvent(evento);
-            })(window.wrappedJSObject);
+            const documento = this.reus.shift();
+            liftA2(query('#cpfCnpj'), query('#botaoIncluirCpfCnpj'), (cpf, botao) => {
+                cpf.value = documento;
+                botao.disabled = false;
+                botao.focus();
+                botao.click();
+            });
         }
-        else if (query('[name="idTipoAcao"]') && query('[name="idTipoAcao"]').value == '') {
-            query('[name="idTipoAcao"]').focus();
+        else {
+            liftA1(queryInputByName('idTipoAcao').filter(input => input.value === ''), input => {
+                input.focus();
+            }).altL(() => liftA1(queryInputByName('valorUnico'), input => {
+                input.select();
+                input.focus();
+            }));
         }
-        else if (query('[name="valorUnico"]')) {
-            query('[name="valorUnico"]').select();
-            query('[name="valorUnico"]').focus();
+    }
+    tratarErros() {
+        const erros = queryAll('.msgErro').map(erro => {
+            erro.innerHTML = erro.innerHTML
+                .replace(/\n?•(\&nbsp;)?/g, '')
+                .replace('<b>', '&ldquo;')
+                .replace('</b>', '&rdquo;');
+            return erro.textContent;
+        });
+        if (erros.length) {
+            const msgErro = erros.join('\n');
+            alert(msgErro);
+            history.go(-1);
+            return true;
         }
+        return false;
     }
 }
 class Maybe {
@@ -827,6 +754,13 @@ function liftA3(ax, ay, az, f) {
 }
 function liftA4(aw, ax, ay, az, f) {
     return az.ap(ay.ap(ax.ap(aw.map((w) => (x) => (y) => (z) => f(w, x, y, z)))));
+}
+function padLeft(size, number) {
+    let result = String(number);
+    while (result.length < size) {
+        result = `0${result}`;
+    }
+    return result;
 }
 function query(selector, context = document) {
     return Maybe.fromNullable(context.querySelector(selector));

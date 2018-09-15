@@ -117,19 +117,44 @@ class Bacen {
 	}
 
 	/**
+	 * Menu Ordens judiciais -> Consultar Ordens Judiciais protocolizadas por Assessores
+	 */
+	consultarSolicitacoesProtocoladasAssessor(method: string) {
+		assertStrictEquals('editarCriteriosConsultaPorAssessor', method);
+
+		queryInputByName('dataInicial').map(input => {
+			input.focus();
+		});
+		vincular('cdOperadorAssessor', 'login');
+		vincular('cdOperadorJuiz', 'juiz');
+
+		function vincular(nomeInput: string, nomePreferencia: string) {
+			liftA1(queryInputByName(nomeInput), input => {
+				Preferencias.vincularInput(input, nomePreferencia, {
+					focarSeVazio: true,
+					salvarAoPreencher: false,
+				});
+			});
+		}
+	}
+
+	/**
 	 * Menu Ordens judiciais -> Consultar Ordens Judiciais por Juízo
 	 */
 	consultarSolicitacoesProtocoladasJuizo(method: string) {
 		assertStrictEquals('editarCriteriosConsultaPorVara', method);
 
+		vincular('codigoVara', 'vara');
+		vincular('operador', 'juiz');
+
 		function vincular(nomeInput: string, nomePreferencia: string) {
 			liftA1(queryInputByName(nomeInput), input => {
-				Preferencias.vincularInput(input, nomePreferencia);
+				Preferencias.vincularInput(input, nomePreferencia, {
+					focarSeVazio: true,
+					salvarAoPreencher: false,
+				});
 			});
 		}
-
-		vincular('codigoVara', 'vara');
-		vincular('operador', 'login');
 	}
 
 	/**
@@ -364,7 +389,7 @@ class Bacen {
 		} else if (protocolo.length >= 1 && protocolo.length <= 10) {
 			const ano = new Date().getFullYear();
 			const numero = Number(protocolo);
-			return { ok: true, valor: `${(padLeft(4, ano), padLeft(10, numero))}` };
+			return { ok: true, valor: `${padLeft(4, ano)}${padLeft(10, numero)}` };
 		} else {
 			return { ok: false, motivo: 'erroDigitacao', valorInformado: input };
 		}
