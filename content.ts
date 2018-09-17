@@ -21,7 +21,11 @@ type ResultadoNumproc =
 
 interface Array<T> {
 	concat(that: Array<T>): Array<T>;
+	filterMap<U>(f: (_: T) => Maybe<U>): Array<U>;
 }
+Array.prototype.filterMap = function(f) {
+	return this.reduce((ys, x) => f(x).fold(() => ys, y => (ys.push(y), ys)), []);
+};
 
 // Classes
 
@@ -49,44 +53,57 @@ class Bacen {
 		const parametros = url.searchParams;
 		const method = parametros.get('method') || '';
 		if (this.pagina in this && typeof (this as any)[this.pagina] === 'function') {
-			const result = (this as any)[this.pagina](method);
-			if (result instanceof Promise) {
-				result.catch(err => console.error(err));
-			}
+			const result = (this as any)[this.pagina](method) as Either<Error, void>;
+			result.fold(err => console.error(err), () => {});
 		}
-		const observarPreferencia = <K extends keyof Bacen>(nome: K) => {
+		observarPreferencia(this, 'secao');
+		observarPreferencia(this, 'subsecao');
+
+		function observarPreferencia<K extends keyof Bacen>(bacen: Bacen, nome: K) {
 			Preferencias.observar(nome, (maybe: Bacen[K]) => {
-				this[nome] = maybe;
+				bacen[nome] = maybe;
 			});
-		};
-		observarPreferencia('secao');
-		observarPreferencia('subsecao');
+		}
 	}
 
 	/**
 	 * Menu Minutas -> Incluir Minuta de Bloqueio de Valores -> Conferir dados da Minuta
 	 */
-	conferirDadosMinutaBVInclusao(method: string) {
-		assertStrictEquals('conferirDados', method);
+	conferirDadosMinutaBVInclusao(method: string): Either<Error, void> {
+		return assertStrictEquals('conferirDados', method)
+			.chain(() => this.tratarErros())
+			.chain(() =>
+				obterSenhaJuiz()
+					.map(onSenhaJuiz)
+					.chainLeft(err1 =>
+						obterBtnIncluir()
+							.map(onBtnIncluir)
+							.chainLeft(err2 => Left(new Error([err1, err2].join('\n'))))
+					)
+			);
 
-		if (this.tratarErros()) return;
-		liftA1(queryInputByName('senhaJuiz').filter(senhaJuiz => !senhaJuiz.disabled), senhaJuiz => {
+		function obterSenhaJuiz() {
+			return queryInputByName('senhaJuiz')
+				.filter(senhaJuiz => !senhaJuiz.disabled)
+				.toEither('Campo "senhaJuiz" não encontrado ou desabilitado.');
+		}
+
+		function obterBtnIncluir() {
+			return queryInputByName('btnIncluir').toEither('Campo "btnIncluir" não encontrado.');
+		}
+
+		function onSenhaJuiz(senhaJuiz: HTMLInputElement) {
 			senhaJuiz.focus();
-		}).altL(() =>
-			liftA1(query<HTMLInputElement>('[name="btnIncluir"]'), btnIncluir => {
-				window.addEventListener(
-					'keypress',
-					e => {
-						if (e.keyCode == 13) {
-							e.preventDefault();
-							e.stopPropagation();
-							btnIncluir.click();
-						}
-					},
-					true
-				);
-			})
-		);
+		}
+
+		function onBtnIncluir(btnIncluir: HTMLInputElement) {
+			window.addEventListener('keypress', e => {
+				if (e.keyCode !== KeyCode.ENTER) return;
+				e.preventDefault();
+				e.stopPropagation();
+				btnIncluir.click();
+			});
+		}
 	}
 
 	/**
@@ -107,13 +124,31 @@ class Bacen {
 	consultarSolicitacoesProtocoladas(
 		nomeInput: string,
 		nomeMetodoOnChange: 'onConsultaProcessoChange' | 'onConsultaProtocoloChange'
-	) {
-		liftA2(queryInputByName(nomeInput), query<HTMLInputElement>('.botao'), (input, botao) => {
+	): Either<Error, void> {
+		return liftA2(obterInput(nomeInput), obterBotao(), (input, botao) =>
+			onInputBotao(this, input, botao)
+		).mapLeft(msg => new Error(msg));
+
+		function obterInput(nome: string): Either<string, HTMLInputElement> {
+			return queryInputByName(nome).fold(
+				() => Left(`Elemento não encontrado: 'input[name="${nome}"]'.`),
+				Right
+			);
+		}
+
+		function obterBotao(): Either<string, HTMLInputElement> {
+			return query<HTMLInputElement>('input.botao').fold(
+				() => Left('Botão não encontrado.'),
+				Right
+			);
+		}
+
+		function onInputBotao(bacen: Bacen, input: HTMLInputElement, botao: HTMLInputElement) {
 			input.focus();
-			input.addEventListener('change', () => this[nomeMetodoOnChange](input), true);
-			input.addEventListener('keypress', e => this.onProcessoKeypress(e, input), true);
-			botao.addEventListener('click', e => this.onBotaoClick(e), true);
-		});
+			input.addEventListener('change', () => bacen[nomeMetodoOnChange](input), true);
+			input.addEventListener('keypress', e => bacen.onProcessoKeypress(e, input), true);
+			botao.addEventListener('click', e => bacen.onBotaoClick(e), true);
+		}
 	}
 
 	/**
@@ -748,22 +783,56 @@ class Bacen {
 		}
 	}
 
-	tratarErros(): boolean {
-		const erros = queryAll('.msgErro').map(erro => {
-			erro.innerHTML = erro.innerHTML
-				.replace(/\n?•(\&nbsp;)?/g, '')
-				.replace('<b>', '&ldquo;')
-				.replace('</b>', '&rdquo;');
-			return erro.textContent;
-		});
-		if (erros.length) {
-			const msgErro = erros.join('\n');
-			alert(msgErro);
-			history.go(-1);
-			return true;
-		}
-		return false;
+	tratarErros(): Either<Error, void> {
+		return queryAll('.msgErro')
+			.filterMap(erro => {
+				erro.innerHTML = erro.innerHTML
+					.replace(/\n?•(\&nbsp;)?/g, '')
+					.replace('<b>', '&ldquo;')
+					.replace('</b>', '&rdquo;');
+				return Maybe.fromNullable(erro.textContent).filter(x => x.trim() !== '');
+			})
+			.reduce<Maybe<string[]>>((xs, x) => xs.concat(Just([x])), Nothing)
+			.fold(
+				() => Right(undefined),
+				erros => {
+					const msgErro = erros.join('\n');
+					alert(msgErro);
+					history.go(-1);
+					return Left(new Error(msgErro));
+				}
+			);
 	}
+}
+
+class Either<L, R> {
+	constructor(readonly fold: <B>(Left: (_: L) => B, Right: (_: R) => B) => B) {}
+
+	ap<B>(that: Either<L, (_: R) => B>): Either<L, B> {
+		return that.chain(f => this.map(f));
+	}
+	chain<B>(f: (_: R) => Either<L, B>): Either<L, B> {
+		return this.fold(Left, f);
+	}
+	chainLeft<B>(f: (_: L) => Either<B, R>): Either<B, R> {
+		return this.fold(f, Right);
+	}
+	map<B>(f: (_: R) => B): Either<L, B> {
+		return this.fold(Left, x => Right(f(x)));
+	}
+	mapLeft<B>(f: (_: L) => B): Either<B, R> {
+		return this.fold(x => Left(f(x)), Right);
+	}
+
+	static of<R, L = never>(value: R): Either<L, R> {
+		return Right(value);
+	}
+}
+function Left<L, R = never>(leftValue: L): Either<L, R> {
+	return new Either((L, _) => L(leftValue));
+}
+function Right<R, L = never>(rightValue: R): Either<L, R> {
+	return new Either((_, R) => R(rightValue));
 }
 
 const enum KeyCode {
@@ -805,6 +874,9 @@ class Maybe<A> {
 	}
 	getOrElseL(lazy: () => A): A {
 		return this.fold(lazy, x => x);
+	}
+	toEither<L>(leftValue: L): Either<L, A> {
+		return this.fold(() => Left(leftValue), Right);
 	}
 
 	static fromNullable<A>(value: A | null | undefined): Maybe<A> {
@@ -901,10 +973,11 @@ class Preferencias {
 
 // Funções
 
-function assertStrictEquals<T>(expected: T, actual: T): void {
+function assertStrictEquals<T>(expected: T, actual: T): Either<Error, T> {
 	if (actual !== expected) {
-		throw new Error(`"${actual}" !== "${expected}".`);
+		return Left(new Error(`"${actual}" !== "${expected}".`));
 	}
+	return Right(actual);
 }
 
 function formatNumber(num: number) {
@@ -916,18 +989,26 @@ function formatNumber(num: number) {
 	});
 }
 
+function liftA1<L, A, B>(ex: Either<L, A>, f: (x: A) => B): Either<L, B>;
 function liftA1<A, B>(mx: Maybe<A>, f: (x: A) => B): Maybe<B>;
 function liftA1<A, B>(ax: Apply<A>, f: (x: A) => B): Apply<B>;
 function liftA1<A, B>(ax: Apply<A>, f: (x: A) => B): Apply<B> {
 	return ax.map(f);
 }
 
+function liftA2<L, A, B, C>(ex: Either<L, A>, ey: Either<L, B>, f: (x: A, y: B) => C): Either<L, C>;
 function liftA2<A, B, C>(mx: Maybe<A>, my: Maybe<B>, f: (x: A, y: B) => C): Maybe<C>;
 function liftA2<A, B, C>(ax: Apply<A>, ay: Apply<B>, f: (x: A, y: B) => C): Apply<C>;
 function liftA2<A, B, C>(ax: Apply<A>, ay: Apply<B>, f: (x: A, y: B) => C): Apply<C> {
 	return ay.ap(ax.map((x: A) => (y: B) => f(x, y)));
 }
 
+function liftA3<L, A, B, C, D>(
+	ex: Either<L, A>,
+	ey: Either<L, B>,
+	ez: Either<L, C>,
+	f: (x: A, y: B, z: C) => D
+): Either<L, D>;
 function liftA3<A, B, C, D>(
 	mx: Maybe<A>,
 	my: Maybe<B>,
@@ -949,6 +1030,13 @@ function liftA3<A, B, C, D>(
 	return az.ap(ay.ap(ax.map((x: A) => (y: B) => (z: C) => f(x, y, z))));
 }
 
+function liftA4<L, A, B, C, D, E>(
+	ew: Either<L, A>,
+	ex: Either<L, B>,
+	ey: Either<L, C>,
+	ez: Either<L, D>,
+	f: (w: A, x: B, y: C, z: D) => E
+): Either<L, E>;
 function liftA4<A, B, C, D, E>(
 	mw: Maybe<A>,
 	mx: Maybe<B>,
@@ -990,7 +1078,7 @@ function queryAll<T extends Element>(selector: string, context: NodeSelector = d
 }
 
 function queryInputByName(name: string, context: NodeSelector = document): Maybe<HTMLInputElement> {
-	return Maybe.fromNullable(context.querySelector<HTMLInputElement>(`input[name="${name}"]`));
+	return query<HTMLInputElement>(`input[name="${name}"]`, context);
 }
 
 main();
