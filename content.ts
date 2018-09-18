@@ -216,7 +216,7 @@ class Bacen {
 		window.addEventListener(
 			'unload',
 			() => {
-				window.opener.setTimeout('processaLista();', 100);
+				window.opener.postMessage('processaLista', location.origin);
 			},
 			true
 		);
@@ -754,10 +754,11 @@ class Bacen {
 	processaLista(reus?: string[]) {
 		if (reus !== undefined) {
 			this.reus = reus;
-			const self = this;
-			window.wrappedJSObject.processaLista = function() {
-				self.processaLista.apply(self, []);
-			};
+			window.addEventListener('message', evt => {
+				if (evt.origin === location.origin && evt.data === 'processaLista') {
+					this.processaLista();
+				}
+			});
 		}
 		if (this.reus.length) {
 			const documento = this.reus.shift() as string;
