@@ -338,7 +338,7 @@ class Bacen {
 		const todas_partes = modo == 'preencher' ? 'S' : 'N';
 		// WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
 		const response = await fetch(
-			'http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php',
+			'https://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php',
 			{
 				method: 'POST',
 				headers: new Headers({
