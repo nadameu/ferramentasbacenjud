@@ -4,7 +4,8 @@
 	"description": "Melhorias ao sistema BacenJud 2.0",
 	"private": true,
 	"scripts": {
-		"web-ext": "web-ext"
+		"build": "web-ext build",
+		"start": "web-ext run"
 	},
 	"repository": {
 		"type": "git",
