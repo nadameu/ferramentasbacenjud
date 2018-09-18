@@ -131,7 +131,7 @@ class Bacen {
     consultarReu(method) {
         assertStrictEquals('consultarReu', method);
         window.addEventListener('unload', () => {
-            window.opener.setTimeout('processaLista();', 100);
+            window.opener.postMessage('processaLista', location.origin);
         }, true);
         window.addEventListener('keypress', e => {
             if (e.keyCode == 27) {
@@ -206,7 +206,7 @@ class Bacen {
         }
         const todas_partes = modo == 'preencher' ? 'S' : 'N';
         // WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
-        const response = await fetch('http://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php', {
+        const response = await fetch('https://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php', {
             method: 'POST',
             headers: new Headers({
                 SOAPAction: 'consulta_processual_ws_wsdl#ws_consulta_processo',
@@ -576,10 +576,11 @@ class Bacen {
     processaLista(reus) {
         if (reus !== undefined) {
             this.reus = reus;
-            const self = this;
-            window.wrappedJSObject.processaLista = function () {
-                self.processaLista.apply(self, []);
-            };
+            window.addEventListener('message', evt => {
+                if (evt.origin === location.origin && evt.data === 'processaLista') {
+                    this.processaLista();
+                }
+            });
         }
         if (this.reus.length) {
             const documento = this.reus.shift();
