@@ -1,42 +1,36 @@
 "use strict";
 function main() {
-    Preferencias.init();
-    new Bacen();
+    carregarPreferencias().then(preferencias => analisarPagina(preferencias));
 }
 Array.prototype.filterMap = function (f) {
-    return this.reduce((ys, x) => f(x).fold(() => ys, y => (ys.push(y), ys)), []);
+    const ys = [];
+    this.forEach(x => f(x).fold(() => { }, y => ys.push(y)));
+    return ys;
+};
+Array.prototype.partitionMap = function (f) {
+    const result = { left: [], right: [] };
+    this.forEach(x => f(x).fold(l => result.left.push(l), r => result.right.push(r)));
+    return result;
 };
 // Classes
 /**
  * Objeto principal do programa
  */
 class Bacen {
-    /**
-     * Função inicial do programa
-     */
     constructor() {
+        /**
+         * Página sendo exibida
+         */
         this.submit = false;
         this.valid = true;
         this.buscando = false;
         this.reus = [];
         this.secao = Nothing;
         this.subsecao = Nothing;
-        const url = new URL(location.href);
-        this.pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
-        const parametros = url.searchParams;
-        const method = parametros.get('method') || '';
-        if (this.pagina in this && typeof this[this.pagina] === 'function') {
-            const result = this[this.pagina](method);
-            result.catch(err => console.error(err));
-        }
-        observarPreferencia(this, 'secao');
-        observarPreferencia(this, 'subsecao');
-        function observarPreferencia(bacen, nome) {
-            Preferencias.observar(nome, (maybe) => {
-                bacen[nome] = maybe;
-            });
-        }
     }
+    /**
+     * Função inicial do programa
+     */
     /**
      * Menu Minutas -> Incluir Minuta de Bloqueio de Valores -> Conferir dados da Minuta
      */
@@ -75,7 +69,10 @@ class Bacen {
         return this.consultarReu();
     }
     consultarSolicitacoesProtocoladas(nomeInput, tipo) {
-        return Promise.all([queryInputByName(nomeInput), query('input.botao')]).then(([input, botao]) => {
+        return Promise.all([
+            queryInputByName(nomeInput),
+            queryEither('input.botao'),
+        ]).then(([input, botao]) => {
             input.focus();
             input.addEventListener('change', () => tipo === 'processo'
                 ? this.onConsultaProcessoChange(input)
@@ -99,7 +96,7 @@ class Bacen {
                 input.focus();
                 return;
             }
-            return Preferencias.vincularInput(input, nomePreferencia, {
+            return __Preferencias__.vincularInput(input, nomePreferencia, {
                 focarSeVazio: true,
                 salvarAoPreencher: false,
             });
@@ -111,7 +108,7 @@ class Bacen {
     async consultarSolicitacoesProtocoladasJuizo() {
         return Promise.all([vincular('codigoVara', 'vara'), vincular('operador', 'juiz')]);
         async function vincular(nomeInput, nomePreferencia) {
-            return Preferencias.vincularInput(await queryInputByName(nomeInput), nomePreferencia, {
+            return __Preferencias__.vincularInput(await queryInputByName(nomeInput), nomePreferencia, {
                 focarSeVazio: true,
                 salvarAoPreencher: false,
             });
@@ -158,7 +155,7 @@ class Bacen {
             processo.addEventListener('change', () => this.onProcessoChange(processo), true);
             processo.addEventListener('keypress', e => this.onProcessoKeypress(e, processo), true);
             processo.focus();
-            return Preferencias.vincularInput(codigoVara, 'vara', {
+            return __Preferencias__.vincularInput(codigoVara, 'vara', {
                 focarSeVazio: true,
                 salvarAoPreencher: false,
             });
@@ -171,7 +168,7 @@ class Bacen {
             ? Promise.reject(new Error('Campo "cdOperadorJuiz" oculto.'))
             : Promise.resolve(input))
             .then(cdOperadorJuiz => {
-            return Preferencias.vincularInput(cdOperadorJuiz, 'juiz', {
+            return __Preferencias__.vincularInput(cdOperadorJuiz, 'juiz', {
                 focarSeVazio: true,
                 salvarAoPreencher: false,
             });
@@ -188,40 +185,6 @@ class Bacen {
      */
     criarMinutaSIInclusao() {
         return this.criarMinutaBVInclusao();
-    }
-    dologin(_) {
-        return Promise.all([
-            queryInputByName('unidade'),
-            queryInputByName('operador'),
-            queryInputByName('senha'),
-            query('#opcao_operador'),
-        ]).then(([unidade, operador, senha, radio]) => vincularCampos(unidade, operador, senha, radio));
-        async function vincularCampos(unidade, operador, senha, radio) {
-            await Promise.all([
-                Preferencias.vincularInput(unidade, 'unidade'),
-                Preferencias.vincularInput(operador, 'login'),
-            ]);
-            window.addEventListener('load', preencher(senha, operador, unidade));
-            radio.addEventListener('click', preencher(senha, operador, unidade));
-        }
-        function preencher(senha, operador, unidade) {
-            return () => setTimeout(() => preencherCampos(senha, operador, unidade), 100);
-        }
-        async function preencherCampos(senha, operador, unidade) {
-            // Ordem dos campos de trás para frente, pois o último campo não preenchido restará focado.
-            senha.focus();
-            await preencherCampo(operador, 'login');
-            await preencherCampo(unidade, 'unidade');
-        }
-        async function preencherCampo(input, nome) {
-            const pref = await Preferencias.obter(nome);
-            pref.fold(() => {
-                input.value = '';
-                input.focus();
-            }, x => {
-                input.value = x;
-            });
-        }
     }
     /**
      * Obtém informações do processo e preenche automaticamente os campos
@@ -331,7 +294,7 @@ class Bacen {
     incluirMinuta(tipoMinuta) {
         const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
         const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
-        return query(selector)
+        return queryEither(selector)
             .then(cell => cell.textContent || '')
             .then(txt => txt.split(/\n/))
             .then(xs => (xs.length > 2 ? Promise.resolve(xs) : Promise.reject()))
@@ -368,7 +331,7 @@ class Bacen {
         if (this.submit && this.valid && !this.buscando) {
             Promise.all([
                 queryInputByName('numeroProcesso').catch((err1) => queryInputByName('numeroProtocolo').catch((err2) => Promise.reject(new Error([err1, err2].map(x => x.message).join('\n'))))),
-                query('form'),
+                queryEither('form'),
             ])
                 .then(([input, form]) => {
                 input.select();
@@ -443,12 +406,12 @@ class Bacen {
             codigoVara.setAttribute('value', codigoVara.value);
         })
             .catch(() => { });
-        await query('form')
+        await queryEither('form')
             .then(form => {
             form.reset();
         })
             .catch(() => { });
-        await query('select[name="reus"]').then(select => {
+        await queryEither('select[name="reus"]').then(select => {
             const reus = Array.from(select.options);
             if (reus.length) {
                 reus.forEach(reu => (reu.selected = true));
@@ -500,12 +463,15 @@ class Bacen {
         e.preventDefault();
         e.stopPropagation();
         if (input.name === 'processo') {
-            query('select[name="idTipoAcao"]').then(idTipoAcao => {
+            queryEither('select[name="idTipoAcao"]').then(idTipoAcao => {
                 idTipoAcao.focus();
             });
         }
         else if (['numeroProcesso', 'numeroProtocolo'].includes(input.name)) {
-            Promise.all([query('input.botao'), query('form')]).then(([botao, form]) => {
+            Promise.all([
+                queryEither('input.botao'),
+                queryEither('form'),
+            ]).then(([botao, form]) => {
                 this.submit = e.keyCode == 13 /* ENTER */;
                 botao.focus();
                 if (this.submit && this.valid && !this.buscando) {
@@ -524,12 +490,12 @@ class Bacen {
     async pesquisarPorProcesso() {
         await this.tratarErros();
         return Promise.all([
-            query('.pagebanner')
+            queryEither('.pagebanner')
                 .then(p => (p.textContent || '').match(/^\d+/))
                 .then(x => (x === null ? Promise.reject() : Promise.resolve(x)))
                 .then(xs => Number(xs[0]))
                 .catch(() => Promise.reject(new Error('Elemento ".pagebanner" não possui conteúdo numérico.'))),
-            query('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(cell => query('a', cell)),
+            queryEither('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(cell => queryEither('a', cell)),
         ]).then(([registros, link]) => {
             if (registros === 1) {
                 location.href = link.href;
@@ -550,7 +516,7 @@ class Bacen {
         const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
         const processo = await Promise.resolve(text)
             .then(txt => parser.parseFromString(txt, 'text/xml'))
-            .then(doc => query('return', doc))
+            .then(doc => queryEither('return', doc))
             .then(ret => ret.textContent || '')
             .then(ret => parser.parseFromString(ret, 'text/xml'));
         const campoProcesso = await queryInputByName(el);
@@ -569,7 +535,7 @@ class Bacen {
         }
         this.valid = true;
         this.buscando = false;
-        await query('Processo Processo', processo)
+        await queryEither('Processo Processo', processo)
             .then(p => p.textContent || '')
             .then(txt => txt.replace(/[^0-9]/g, ''))
             .then(value => {
@@ -578,8 +544,8 @@ class Bacen {
         if (modo == 'preencher') {
             const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
             await Promise.all([
-                query('select[name="idTipoAcao"]'),
-                query('CodClasse', processo).then(elt => elt.textContent || ''),
+                queryEither('select[name="idTipoAcao"]'),
+                queryEither('CodClasse', processo).then(elt => elt.textContent || ''),
             ]).then(([tipoAcao, codClasse]) => {
                 if (tipoAcaoPorCodClasse.has(codClasse)) {
                     tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse);
@@ -587,7 +553,7 @@ class Bacen {
             });
             await Promise.all([
                 queryInputByName('valorUnico'),
-                query('ValCausa', processo)
+                queryEither('ValCausa', processo)
                     .then(elt => elt.textContent || '')
                     .then(Number)
                     .then(x => isNaN(x) || x === 0
@@ -607,19 +573,22 @@ class Bacen {
                     .catch(() => defaultValue);
             }
             await Promise.all(queryAll('Partes Parte', processo).map(async (parte) => {
-                if ((await getText(query('Autor', parte), 'N')) === 'S') {
-                    (await queryInputByName('nomeAutor')).value = await getText(query('Nome', parte), '');
-                    (await queryInputByName('cpfCnpjAutor')).value = await getText(query('CPF_CGC', parte), '');
+                if ((await getText(queryEither('Autor', parte), 'N')) === 'S') {
+                    (await queryInputByName('nomeAutor')).value = await getText(queryEither('Nome', parte), '');
+                    (await queryInputByName('cpfCnpjAutor')).value = await getText(queryEither('CPF_CGC', parte), '');
                 }
-                else if ((await getText(query('Réu', parte).catch(() => query('Reu', parte)), 'N')) === 'S') {
-                    reus.push(await getText(query('CPF_CGC', parte), ''));
+                else if ((await getText(queryEither('Réu', parte).catch(() => queryEither('Reu', parte)), 'N')) === 'S') {
+                    reus.push(await getText(queryEither('CPF_CGC', parte), ''));
                 }
             }));
             this.processaLista(reus);
         }
         else if (modo == 'consulta') {
             if (this.submit) {
-                Promise.all([queryInputByName('numeroProcesso'), query('form')]).then(([processo, form]) => {
+                Promise.all([
+                    queryInputByName('numeroProcesso'),
+                    queryEither('form'),
+                ]).then(([processo, form]) => {
                     processo.select();
                     processo.focus();
                     form.submit();
@@ -642,8 +611,8 @@ class Bacen {
         if (this.reus.length) {
             const documento = this.reus.shift();
             Promise.all([
-                query('#cpfCnpj'),
-                query('#botaoIncluirCpfCnpj'),
+                queryEither('#cpfCnpj'),
+                queryEither('#botaoIncluirCpfCnpj'),
             ]).then(([cpf, botao]) => {
                 cpf.value = documento;
                 botao.disabled = false;
@@ -652,7 +621,7 @@ class Bacen {
             });
         }
         else {
-            query('select[name="idTipoAcao"]')
+            queryEither('select[name="idTipoAcao"]')
                 .then(input => (input.value === '' ? Promise.resolve(input) : Promise.reject()))
                 .then(input => {
                 input.focus();
@@ -680,34 +649,37 @@ class Bacen {
         }
     }
 }
-class Validation {
+class Either {
     constructor(fold) {
         this.fold = fold;
     }
-    altL(lazy) {
-        return this.fold(theseErrors => lazy().fold(thoseErrors => Failure(theseErrors.concat(thoseErrors)), Success), Success);
-    }
     ap(that) {
-        return this.fold(theseErrors => Failure(that.fold(thoseErrors => theseErrors.concat(thoseErrors), () => theseErrors)), x => that.fold(Failure, f => Success(f(x))));
+        return that.chain(f => this.map(f));
+    }
+    bimap(f, g) {
+        return this.fold(l => Left(f(l)), r => Right(g(r)));
     }
     chain(f) {
-        return this.fold(Failure, f);
+        return this.fold(Left, f);
+    }
+    chainLeft(f) {
+        return this.fold(f, Right);
     }
     map(f) {
-        return this.fold(Failure, x => Success(f(x)));
+        return this.fold(Left, x => Right(f(x)));
     }
-    static fail(error) {
-        return Failure([error]);
+    mapLeft(f) {
+        return this.fold(x => Left(f(x)), Right);
     }
     static of(value) {
-        return Success(value);
+        return Right(value);
     }
 }
-function Failure(errors) {
-    return new Validation((F, _) => F(errors));
+function Left(leftValue, _rightValue) {
+    return new Either((L, _) => L(leftValue));
 }
-function Success(value) {
-    return new Validation((_, S) => S(value));
+function Right(rightValue, _leftValue) {
+    return new Either((_, R) => R(rightValue));
 }
 class Maybe {
     constructor(fold) {
@@ -730,6 +702,12 @@ class Maybe {
     }
     filter(p) {
         return this.fold(() => Nothing, x => (p(x) ? Just(x) : Nothing));
+    }
+    ifJust(f) {
+        this.fold(() => { }, f);
+    }
+    ifNothing(f) {
+        this.fold(f, () => { });
     }
     map(f) {
         return this.chain(x => Just(f(x)));
@@ -757,7 +735,7 @@ function Just(value) {
     return Maybe.of(value);
 }
 const Nothing = Maybe.zero();
-class Preferencias {
+class __Preferencias__ {
     static init() {
         if (this.initialized)
             return;
@@ -819,21 +797,186 @@ class Preferencias {
         });
     }
 }
-Preferencias.initialized = false;
-Preferencias.inputs = new Map();
-Preferencias.callbacks = new Map();
+__Preferencias__.initialized = false;
+__Preferencias__.inputs = new Map();
+__Preferencias__.callbacks = new Map();
 class QueryError extends Error {
     constructor(msg, data) {
         super(msg);
         this.data = data;
     }
 }
-// Funções
-function assertStrictEquals(expected, actual) {
-    if (actual !== expected) {
-        return Validation.fail(`"${actual}" !== "${expected}".`);
+function allEithers(eithers) {
+    const result = eithers.partitionMap(x => x);
+    return result.left.length > 0 ? Left(result.left) : Right(result.right);
+}
+function analisarPagina(preferencias) {
+    const url = new URL(location.href);
+    const pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
+    if (Paginas.has(pagina)) {
+        const result = Paginas.get(pagina)(preferencias, pagina);
+        result.mapLeft(errors => {
+            errors.forEach(error => console.error(error));
+        });
     }
-    return Validation.of(actual);
+    else {
+        console.log('Página desconhecida:', pagina);
+    }
+}
+async function carregarPreferencias() {
+    const preferencias = new Map(await browser.storage.local.get([
+        "juiz" /* JUIZ */,
+        "operador" /* OPERADOR */,
+        "unidade" /* UNIDADE */,
+        "secao" /* SECAO */,
+        "subsecao" /* SUBSECAO */,
+        "vara" /* VARA */,
+    ]).then(prefs => Object.entries(prefs).filter((pair) => pair[1] !== undefined)));
+    const listeners = new Map();
+    browser.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local')
+            return;
+        const changedKeys = Object.keys(changes);
+        changedKeys.forEach(key => {
+            const result = changes[key];
+            if ('newValue' in result && typeof result.newValue === 'string') {
+                preferencias.set(key, result.newValue);
+            }
+            else {
+                preferencias.delete(key);
+            }
+            (listeners.get(key) || []).forEach(listener => listener(Maybe.fromNullable(preferencias.get(key))));
+        });
+    });
+    return {
+        get(name) {
+            return Maybe.fromNullable(preferencias.get(name));
+        },
+        observar(name, listener) {
+            listeners.set(name, (listeners.get(name) || []).concat([listener]));
+            listener(this.get(name));
+        },
+        set(name, value) {
+            return browser.storage.local.set({ [name]: value });
+        },
+        remove(name) {
+            return browser.storage.local.remove(name);
+        },
+    };
+}
+function criarMinutaBVInclusao(preferencias) {
+    return allEithers([queryEither('form'), queryEither('#cpfCnpj')])
+        .chain(([form, cpfCnpj]) => {
+        const elts = form.elements;
+        return allEithers([
+            Right(form),
+            queryCampo('cdOperadorJuiz'),
+            queryCampo('idVara'),
+            queryCampo('codigoVara'),
+            queryCampo('processo'),
+            queryCampo('idTipoAcao'),
+            queryCampo('nomeAutor'),
+            queryCampo('cpfCnpjAutor'),
+            Right(cpfCnpj),
+            queryCampo('reus'),
+            queryCampo('valorUnico')
+                .map(Just)
+                .chainLeft(() => Right(Nothing)),
+        ]);
+        function queryCampo(nome) {
+            const elt = elts.namedItem(nome);
+            return elt === null ? Left(`Campo não encontrado: "${nome}".`) : Right(elt);
+        }
+    })
+        .map(([form, juiz, idVara, vara, processo, tipo, nomeAutor, docAutor, docReu, reus, maybeValor,]) => {
+        [juiz, vara, processo, tipo, nomeAutor].forEach(campo => {
+            campo.required = true;
+        });
+        maybeValor.ifJust(valor => {
+            valor.required = true;
+        });
+        idVara.addEventListener('change', onIdVaraChange);
+        if (idVara.value)
+            onIdVaraChange();
+        function onIdVaraChange() {
+            vara.value = idVara.value;
+        }
+        preferencias.observar("juiz" /* JUIZ */, maybe => maybe.ifJust(value => {
+            if (juiz.value === '')
+                juiz.value = value;
+        }));
+        preferencias.observar("vara" /* VARA */, maybe => maybe.ifJust(value => {
+            if (vara.value === '')
+                vara.value = value;
+        }));
+    });
+}
+function dologin(preferencias) {
+    return queryEither('form')
+        .mapLeft(err => [err])
+        .chain(form => {
+        const collection = form.elements;
+        return allEithers([
+            Right(form),
+            queryCampo('unidade'),
+            queryCampo('operador'),
+            queryCampo('senha'),
+            queryCampo('opcao_login'),
+        ]);
+        function queryCampo(name) {
+            const elt = collection.namedItem(name);
+            return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
+        }
+    })
+        .map(([form, unidade, operador, senha, opcoesLogin]) => {
+        preferencias.observar("unidade" /* UNIDADE */, maybe => {
+            unidade.setAttribute('placeholder', maybe.getOrElse(''));
+        });
+        preferencias.observar("operador" /* OPERADOR */, maybe => {
+            operador.setAttribute('placeholder', maybe.getOrElse(''));
+        });
+        opcoesLogin.forEach(opcao => {
+            opcao.addEventListener('click', focarCampoVazio);
+        });
+        window.addEventListener('load', focarCampoVazio);
+        form.addEventListener('submit', () => {
+            if (unidade.value === '') {
+                unidade.value = preferencias.get("unidade" /* UNIDADE */).getOrElse('');
+            }
+            if (operador.value === '') {
+                operador.value = preferencias.get("operador" /* OPERADOR */).getOrElse('');
+            }
+        });
+        class Campo {
+            constructor(input, preferencia, next) {
+                this.input = input;
+                this.preferencia = preferencia;
+                this.next = next;
+            }
+            concat(that) {
+                return new Campo(this.input, this.preferencia, this.next ? this.next.concat(that) : that);
+            }
+            focar() {
+                Maybe.fromNullable(this.preferencia)
+                    .chain(preferencias.get)
+                    .mapNullable(() => this.next)
+                    .map(next => next.focar())
+                    .getOrElseL(() => {
+                    this.input.focus();
+                });
+            }
+        }
+        const camposAFocar = new Campo(unidade, "unidade" /* UNIDADE */)
+            .concat(new Campo(operador, "operador" /* OPERADOR */))
+            .concat(new Campo(senha));
+        function focarCampoVazio() {
+            if (opcoesLogin.value === 'operador') {
+                setTimeout(() => {
+                    camposAFocar.focar();
+                }, 100);
+            }
+        }
+    });
 }
 function formatNumber(num) {
     return num.toLocaleString('pt-BR', {
@@ -843,17 +986,8 @@ function formatNumber(num) {
         useGrouping: true,
     });
 }
-function liftA(ax, f) {
-    return ax.map(f);
-}
 function liftA2(ax, ay, f) {
     return ay.ap(ax.map((x) => (y) => f(x, y)));
-}
-function liftA3(ax, ay, az, f) {
-    return az.ap(ay.ap(ax.map((x) => (y) => (z) => f(x, y, z))));
-}
-function liftA4(aw, ax, ay, az, f) {
-    return az.ap(ay.ap(ax.ap(aw.map((w) => (x) => (y) => (z) => f(w, x, y, z)))));
 }
 function padLeft(size, number) {
     let result = String(number);
@@ -862,29 +996,25 @@ function padLeft(size, number) {
     }
     return result;
 }
-function query(selector, context = document) {
-    return new Promise((res, rej) => {
-        const elt = context.querySelector(selector);
-        if (!elt) {
-            return rej(new QueryError(`Elemento não encontrado: '${selector}'.`, { context, selector }));
-        }
-        return res(elt);
-    });
+function queryEither(selector, context = document) {
+    const elt = context.querySelector(selector);
+    return elt === null ? Left(`Elemento não encontrado: '${selector}'.`) : Right(elt);
 }
 function queryAll(selector, context = document) {
     return Array.from(context.querySelectorAll(selector));
 }
 function queryMaybe(selector, context = document) {
-    const elt = context.querySelector(selector);
-    return elt === null ? [] : [elt];
+    return Maybe.fromNullable(context.querySelector(selector));
 }
 function queryInputByName(name, context = document) {
-    return new Promise((res, rej) => {
-        const elt = context.querySelector(`input[name="${name}"]`);
-        if (!elt) {
-            return rej(new QueryError(`Campo não encontrado: "${name}".`, { context, name }));
-        }
-        return res(elt);
-    });
+    const elt = context.querySelector(`input[name="${name}"]`);
+    return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
 }
+const Paginas = new Map([
+    ['dologin', dologin],
+    ['conferirDadosMinutaBVInclusao', criarMinutaBVInclusao],
+    ['conferirDadosMinutaSIInclusao', criarMinutaBVInclusao],
+    ['criarMinutaBVInclusao', criarMinutaBVInclusao],
+    ['criarMinutaSIInclusao', criarMinutaBVInclusao],
+]);
 main();

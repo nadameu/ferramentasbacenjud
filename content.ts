@@ -1,6 +1,5 @@
 function main() {
-	Preferencias.init();
-	new Bacen();
+	carregarPreferencias().then(preferencias => analisarPagina(preferencias));
 }
 
 // Interfaces
@@ -22,9 +21,17 @@ type ResultadoNumproc =
 interface Array<T> {
 	concat(that: Array<T>): Array<T>;
 	filterMap<U>(f: (_: T) => Maybe<U>): Array<U>;
+	partitionMap<L, U>(f: (_: T) => Either<L, U>): { left: Array<L>; right: Array<U> };
 }
 Array.prototype.filterMap = function(f) {
-	return this.reduce((ys, x) => f(x).fold(() => ys, y => (ys.push(y), ys)), []);
+	const ys = [] as any[];
+	this.forEach(x => f(x).fold(() => {}, y => ys.push(y)));
+	return ys;
+};
+Array.prototype.partitionMap = function(f) {
+	const result = { left: [] as any[], right: [] as any[] };
+	this.forEach(x => f(x).fold(l => result.left.push(l), r => result.right.push(r)));
+	return result;
 };
 
 // Classes
@@ -36,7 +43,6 @@ class Bacen {
 	/**
 	 * Página sendo exibida
 	 */
-	pagina: string;
 	submit: boolean = false;
 	valid: boolean = true;
 	buscando: false | { valor: string } = false;
@@ -47,24 +53,6 @@ class Bacen {
 	/**
 	 * Função inicial do programa
 	 */
-	constructor() {
-		const url = new URL(location.href);
-		this.pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
-		const parametros = url.searchParams;
-		const method = parametros.get('method') || '';
-		if (this.pagina in this && typeof (this as any)[this.pagina] === 'function') {
-			const result = (this as any)[this.pagina](method) as Promise<void>;
-			result.catch(err => console.error(err));
-		}
-		observarPreferencia(this, 'secao');
-		observarPreferencia(this, 'subsecao');
-
-		function observarPreferencia<K extends keyof Bacen>(bacen: Bacen, nome: K) {
-			Preferencias.observar(nome, (maybe: Bacen[K]) => {
-				bacen[nome] = maybe;
-			});
-		}
-	}
 
 	/**
 	 * Menu Minutas -> Incluir Minuta de Bloqueio de Valores -> Conferir dados da Minuta
@@ -111,20 +99,21 @@ class Bacen {
 	}
 
 	consultarSolicitacoesProtocoladas(nomeInput: string, tipo: 'processo' | 'protocolo') {
-		return Promise.all([queryInputByName(nomeInput), query<HTMLInputElement>('input.botao')]).then(
-			([input, botao]) => {
-				input.focus();
-				input.addEventListener(
-					'change',
-					() =>
-						tipo === 'processo'
-							? this.onConsultaProcessoChange(input)
-							: this.onConsultaProtocoloChange(input)
-				);
-				input.addEventListener('keypress', e => this.onProcessoKeypress(e, input));
-				botao.addEventListener('click', e => this.onBotaoClick(e));
-			}
-		);
+		return Promise.all([
+			queryInputByName(nomeInput),
+			queryEither<HTMLInputElement>('input.botao'),
+		]).then(([input, botao]) => {
+			input.focus();
+			input.addEventListener(
+				'change',
+				() =>
+					tipo === 'processo'
+						? this.onConsultaProcessoChange(input)
+						: this.onConsultaProtocoloChange(input)
+			);
+			input.addEventListener('keypress', e => this.onProcessoKeypress(e, input));
+			botao.addEventListener('click', e => this.onBotaoClick(e));
+		});
 	}
 
 	/**
@@ -143,7 +132,7 @@ class Bacen {
 				input.focus();
 				return;
 			}
-			return Preferencias.vincularInput(input, nomePreferencia, {
+			return __Preferencias__.vincularInput(input, nomePreferencia, {
 				focarSeVazio: true,
 				salvarAoPreencher: false,
 			});
@@ -157,7 +146,7 @@ class Bacen {
 		return Promise.all([vincular('codigoVara', 'vara'), vincular('operador', 'juiz')]);
 
 		async function vincular(nomeInput: string, nomePreferencia: string) {
-			return Preferencias.vincularInput(await queryInputByName(nomeInput), nomePreferencia, {
+			return __Preferencias__.vincularInput(await queryInputByName(nomeInput), nomePreferencia, {
 				focarSeVazio: true,
 				salvarAoPreencher: false,
 			});
@@ -215,7 +204,7 @@ class Bacen {
 				processo.addEventListener('change', () => this.onProcessoChange(processo), true);
 				processo.addEventListener('keypress', e => this.onProcessoKeypress(e, processo), true);
 				processo.focus();
-				return Preferencias.vincularInput(codigoVara, 'vara', {
+				return __Preferencias__.vincularInput(codigoVara, 'vara', {
 					focarSeVazio: true,
 					salvarAoPreencher: false,
 				});
@@ -231,7 +220,7 @@ class Bacen {
 						: Promise.resolve(input)
 			)
 			.then(cdOperadorJuiz => {
-				return Preferencias.vincularInput(cdOperadorJuiz, 'juiz', {
+				return __Preferencias__.vincularInput(cdOperadorJuiz, 'juiz', {
 					focarSeVazio: true,
 					salvarAoPreencher: false,
 				});
@@ -249,61 +238,6 @@ class Bacen {
 	 */
 	criarMinutaSIInclusao() {
 		return this.criarMinutaBVInclusao();
-	}
-
-	dologin(_: string) {
-		return Promise.all([
-			queryInputByName('unidade'),
-			queryInputByName('operador'),
-			queryInputByName('senha'),
-			query<HTMLInputElement>('#opcao_operador'),
-		]).then(([unidade, operador, senha, radio]) => vincularCampos(unidade, operador, senha, radio));
-
-		async function vincularCampos(
-			unidade: HTMLInputElement,
-			operador: HTMLInputElement,
-			senha: HTMLInputElement,
-			radio: HTMLInputElement
-		) {
-			await Promise.all([
-				Preferencias.vincularInput(unidade, 'unidade'),
-				Preferencias.vincularInput(operador, 'login'),
-			]);
-			window.addEventListener('load', preencher(senha, operador, unidade));
-			radio.addEventListener('click', preencher(senha, operador, unidade));
-		}
-
-		function preencher(
-			senha: HTMLInputElement,
-			operador: HTMLInputElement,
-			unidade: HTMLInputElement
-		): EventListener {
-			return () => setTimeout(() => preencherCampos(senha, operador, unidade), 100);
-		}
-
-		async function preencherCampos(
-			senha: HTMLInputElement,
-			operador: HTMLInputElement,
-			unidade: HTMLInputElement
-		) {
-			// Ordem dos campos de trás para frente, pois o último campo não preenchido restará focado.
-			senha.focus();
-			await preencherCampo(operador, 'login');
-			await preencherCampo(unidade, 'unidade');
-		}
-
-		async function preencherCampo(input: HTMLInputElement, nome: string) {
-			const pref = await Preferencias.obter(nome);
-			pref.fold(
-				() => {
-					input.value = '';
-					input.focus();
-				},
-				x => {
-					input.value = x;
-				}
-			);
-		}
 	}
 
 	/**
@@ -413,7 +347,7 @@ class Bacen {
 	incluirMinuta(tipoMinuta: 'BV' | 'SI') {
 		const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
 		const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
-		return query<HTMLTableCellElement>(selector)
+		return queryEither<HTMLTableCellElement>(selector)
 			.then(cell => cell.textContent || '')
 			.then(txt => txt.split(/\n/))
 			.then(xs => (xs.length > 2 ? Promise.resolve(xs) : Promise.reject()))
@@ -457,7 +391,7 @@ class Bacen {
 						Promise.reject(new Error([err1, err2].map(x => x.message).join('\n')))
 					)
 				),
-				query<HTMLFormElement>('form'),
+				queryEither<HTMLFormElement>('form'),
 			])
 				.then(([input, form]) => {
 					input.select();
@@ -534,12 +468,12 @@ class Bacen {
 				codigoVara.setAttribute('value', codigoVara.value);
 			})
 			.catch(() => {});
-		await query<HTMLFormElement>('form')
+		await queryEither<HTMLFormElement>('form')
 			.then(form => {
 				form.reset();
 			})
 			.catch(() => {});
-		await query<HTMLSelectElement>('select[name="reus"]').then(select => {
+		await queryEither<HTMLSelectElement>('select[name="reus"]').then(select => {
 			const reus = Array.from(select.options);
 			if (reus.length) {
 				reus.forEach(reu => (reu.selected = true));
@@ -592,21 +526,22 @@ class Bacen {
 		e.preventDefault();
 		e.stopPropagation();
 		if (input.name === 'processo') {
-			query<HTMLSelectElement>('select[name="idTipoAcao"]').then(idTipoAcao => {
+			queryEither<HTMLSelectElement>('select[name="idTipoAcao"]').then(idTipoAcao => {
 				idTipoAcao.focus();
 			});
 		} else if (['numeroProcesso', 'numeroProtocolo'].includes(input.name)) {
-			Promise.all([query<HTMLInputElement>('input.botao'), query<HTMLFormElement>('form')]).then(
-				([botao, form]) => {
-					this.submit = e.keyCode == KeyCode.ENTER;
-					botao.focus();
-					if (this.submit && this.valid && !this.buscando) {
-						input.select();
-						input.focus();
-						form.submit();
-					}
+			Promise.all([
+				queryEither<HTMLInputElement>('input.botao'),
+				queryEither<HTMLFormElement>('form'),
+			]).then(([botao, form]) => {
+				this.submit = e.keyCode == KeyCode.ENTER;
+				botao.focus();
+				if (this.submit && this.valid && !this.buscando) {
+					input.select();
+					input.focus();
+					form.submit();
 				}
-			);
+			});
 		}
 	}
 
@@ -618,15 +553,15 @@ class Bacen {
 	async pesquisarPorProcesso() {
 		await this.tratarErros();
 		return Promise.all([
-			query('.pagebanner')
+			queryEither('.pagebanner')
 				.then(p => (p.textContent || '').match(/^\d+/))
 				.then(x => (x === null ? Promise.reject() : Promise.resolve(x)))
 				.then(xs => Number(xs[0]))
 				.catch(() =>
 					Promise.reject(new Error('Elemento ".pagebanner" não possui conteúdo numérico.'))
 				),
-			query<HTMLTableElement>('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(
-				cell => query<HTMLAnchorElement>('a', cell)
+			queryEither<HTMLTableElement>('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(
+				cell => queryEither<HTMLAnchorElement>('a', cell)
 			),
 		]).then(([registros, link]) => {
 			if (registros === 1) {
@@ -650,7 +585,7 @@ class Bacen {
 		const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
 		const processo = await Promise.resolve(text)
 			.then(txt => parser.parseFromString(txt, 'text/xml') as XMLDocument)
-			.then(doc => query('return', doc))
+			.then(doc => queryEither('return', doc))
 			.then(ret => ret.textContent || '')
 			.then(ret => parser.parseFromString(ret, 'text/xml') as XMLDocument);
 
@@ -671,7 +606,7 @@ class Bacen {
 
 		this.valid = true;
 		this.buscando = false;
-		await query('Processo Processo', processo)
+		await queryEither('Processo Processo', processo)
 			.then(p => p.textContent || '')
 			.then(txt => txt.replace(/[^0-9]/g, ''))
 			.then(value => {
@@ -680,8 +615,8 @@ class Bacen {
 		if (modo == 'preencher') {
 			const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
 			await Promise.all([
-				query<HTMLSelectElement>('select[name="idTipoAcao"]'),
-				query('CodClasse', processo).then(elt => elt.textContent || ''),
+				queryEither<HTMLSelectElement>('select[name="idTipoAcao"]'),
+				queryEither('CodClasse', processo).then(elt => elt.textContent || ''),
 			]).then(([tipoAcao, codClasse]) => {
 				if (tipoAcaoPorCodClasse.has(codClasse)) {
 					tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse) as string;
@@ -689,7 +624,7 @@ class Bacen {
 			});
 			await Promise.all([
 				queryInputByName('valorUnico'),
-				query('ValCausa', processo)
+				queryEither('ValCausa', processo)
 					.then(elt => elt.textContent || '')
 					.then(Number)
 					.then(
@@ -713,29 +648,36 @@ class Bacen {
 			}
 			await Promise.all(
 				queryAll('Partes Parte', processo).map(async parte => {
-					if ((await getText(query('Autor', parte), 'N')) === 'S') {
-						(await queryInputByName('nomeAutor')).value = await getText(query('Nome', parte), '');
+					if ((await getText(queryEither('Autor', parte), 'N')) === 'S') {
+						(await queryInputByName('nomeAutor')).value = await getText(
+							queryEither('Nome', parte),
+							''
+						);
 						(await queryInputByName('cpfCnpjAutor')).value = await getText(
-							query('CPF_CGC', parte),
+							queryEither('CPF_CGC', parte),
 							''
 						);
 					} else if (
-						(await getText(query('Réu', parte).catch(() => query('Reu', parte)), 'N')) === 'S'
+						(await getText(
+							queryEither('Réu', parte).catch(() => queryEither('Reu', parte)),
+							'N'
+						)) === 'S'
 					) {
-						reus.push(await getText(query('CPF_CGC', parte), ''));
+						reus.push(await getText(queryEither('CPF_CGC', parte), ''));
 					}
 				})
 			);
 			this.processaLista(reus);
 		} else if (modo == 'consulta') {
 			if (this.submit) {
-				Promise.all([queryInputByName('numeroProcesso'), query<HTMLFormElement>('form')]).then(
-					([processo, form]) => {
-						processo.select();
-						processo.focus();
-						form.submit();
-					}
-				);
+				Promise.all([
+					queryInputByName('numeroProcesso'),
+					queryEither<HTMLFormElement>('form'),
+				]).then(([processo, form]) => {
+					processo.select();
+					processo.focus();
+					form.submit();
+				});
 			}
 		}
 	}
@@ -755,8 +697,8 @@ class Bacen {
 		if (this.reus.length) {
 			const documento = this.reus.shift() as string;
 			Promise.all([
-				query<HTMLInputElement>('#cpfCnpj'),
-				query<HTMLInputElement>('#botaoIncluirCpfCnpj'),
+				queryEither<HTMLInputElement>('#cpfCnpj'),
+				queryEither<HTMLInputElement>('#botaoIncluirCpfCnpj'),
 			]).then(([cpf, botao]) => {
 				cpf.value = documento;
 				botao.disabled = false;
@@ -764,7 +706,7 @@ class Bacen {
 				botao.click();
 			});
 		} else {
-			query<HTMLSelectElement>('select[name="idTipoAcao"]')
+			queryEither<HTMLSelectElement>('select[name="idTipoAcao"]')
 				.then(input => (input.value === '' ? Promise.resolve(input) : Promise.reject()))
 				.then(input => {
 					input.focus();
@@ -796,41 +738,37 @@ class Bacen {
 	}
 }
 
-class Validation<A> {
-	constructor(readonly fold: <B>(Failure: (_: string[]) => B, Success: (_: A) => B) => B) {}
+class Either<L, R> {
+	constructor(readonly fold: <B>(Left: (_: L) => B, Right: (_: R) => B) => B) {}
 
-	altL(lazy: () => Validation<A>): Validation<A> {
-		return this.fold(
-			theseErrors => lazy().fold(thoseErrors => Failure(theseErrors.concat(thoseErrors)), Success),
-			Success
-		);
+	ap<B>(that: Either<L, (_: R) => B>): Either<L, B> {
+		return that.chain(f => this.map(f));
 	}
-	ap<B>(that: Validation<(_: A) => B>): Validation<B> {
-		return this.fold(
-			theseErrors =>
-				Failure(that.fold(thoseErrors => theseErrors.concat(thoseErrors), () => theseErrors)),
-			x => that.fold(Failure, f => Success(f(x)))
-		);
+	bimap<B, C>(f: (_: L) => B, g: (_: R) => C): Either<B, C> {
+		return this.fold(l => Left(f(l)), r => Right(g(r)));
 	}
-	chain<B>(f: (_: A) => Validation<B>): Validation<B> {
-		return this.fold(Failure, f);
+	chain<B>(f: (_: R) => Either<L, B>): Either<L, B> {
+		return this.fold(Left, f);
 	}
-	map<B>(f: (_: A) => B): Validation<B> {
-		return this.fold(Failure, x => Success(f(x)));
+	chainLeft<B>(f: (_: L) => Either<B, R>): Either<B, R> {
+		return this.fold(f, Right);
+	}
+	map<B>(f: (_: R) => B): Either<L, B> {
+		return this.fold(Left, x => Right(f(x)));
+	}
+	mapLeft<B>(f: (_: L) => B): Either<B, R> {
+		return this.fold(x => Left(f(x)), Right);
 	}
 
-	static fail<A = never>(error: string): Validation<A> {
-		return Failure([error]);
-	}
-	static of<A>(value: A): Validation<A> {
-		return Success(value);
+	static of<R, L = never>(value: R): Either<L, R> {
+		return Right(value);
 	}
 }
-function Failure<A = never>(errors: string[]): Validation<A> {
-	return new Validation((F, _) => F(errors));
+function Left<L, R = never>(leftValue: L, _rightValue?: R): Either<L, R> {
+	return new Either((L, _) => L(leftValue));
 }
-function Success<A>(value: A): Validation<A> {
-	return new Validation((_, S) => S(value));
+function Right<R, L = never>(rightValue: R, _leftValue?: L): Either<L, R> {
+	return new Either((_, R) => R(rightValue));
 }
 
 const enum KeyCode {
@@ -862,6 +800,12 @@ class Maybe<A> {
 	filter(p: (_: A) => boolean): Maybe<A> {
 		return this.fold(() => Nothing, x => (p(x) ? Just(x) : Nothing));
 	}
+	ifJust(f: (_: A) => void): void {
+		this.fold(() => {}, f);
+	}
+	ifNothing(f: () => void): void {
+		this.fold(f, () => {});
+	}
 	map<B>(f: (_: A) => B): Maybe<B> {
 		return this.chain(x => Just(f(x)));
 	}
@@ -890,7 +834,7 @@ function Just<A>(value: A): Maybe<A> {
 }
 const Nothing = Maybe.zero();
 
-class Preferencias {
+class __Preferencias__ {
 	static initialized: boolean = false;
 	static inputs: Map<string, HTMLInputElement[]> = new Map();
 	static callbacks: Map<string, ((_: Maybe<string>) => void)[]> = new Map();
@@ -975,11 +919,307 @@ class QueryError extends Error {
 
 // Funções
 
-function assertStrictEquals<T>(expected: T, actual: T): Validation<T> {
-	if (actual !== expected) {
-		return Validation.fail(`"${actual}" !== "${expected}".`);
+function allEithers<L, A>(eithers: [Either<L, A>]): Either<L[], A[]>;
+function allEithers<L, A, B>(eithers: [Either<L, A>, Either<L, B>]): Either<L[], [A, B]>;
+function allEithers<L, A, B, C>(
+	eithers: [Either<L, A>, Either<L, B>, Either<L, C>]
+): Either<L[], [A, B, C]>;
+function allEithers<L, A, B, C, D>(
+	eithers: [Either<L, A>, Either<L, B>, Either<L, C>, Either<L, D>]
+): Either<L[], [A, B, C, D]>;
+function allEithers<L, A, B, C, D, E>(
+	eithers: [Either<L, A>, Either<L, B>, Either<L, C>, Either<L, D>, Either<L, E>]
+): Either<L[], [A, B, C, D, E]>;
+function allEithers<L, A, B, C, D, E, F>(
+	eithers: [Either<L, A>, Either<L, B>, Either<L, C>, Either<L, D>, Either<L, E>, Either<L, F>]
+): Either<L[], [A, B, C, D, E, F]>;
+function allEithers<L, A, B, C, D, E, F, G>(
+	eithers: [
+		Either<L, A>,
+		Either<L, B>,
+		Either<L, C>,
+		Either<L, D>,
+		Either<L, E>,
+		Either<L, F>,
+		Either<L, G>
+	]
+): Either<L[], [A, B, C, D, E, F, G]>;
+function allEithers<L, A, B, C, D, E, F, G, H>(
+	eithers: [
+		Either<L, A>,
+		Either<L, B>,
+		Either<L, C>,
+		Either<L, D>,
+		Either<L, E>,
+		Either<L, F>,
+		Either<L, G>,
+		Either<L, H>
+	]
+): Either<L[], [A, B, C, D, E, F, G, H]>;
+function allEithers<L, A, B, C, D, E, F, G, H, I>(
+	eithers: [
+		Either<L, A>,
+		Either<L, B>,
+		Either<L, C>,
+		Either<L, D>,
+		Either<L, E>,
+		Either<L, F>,
+		Either<L, G>,
+		Either<L, H>,
+		Either<L, I>
+	]
+): Either<L[], [A, B, C, D, E, F, G, H, I]>;
+function allEithers<L, A, B, C, D, E, F, G, H, I, J>(
+	eithers: [
+		Either<L, A>,
+		Either<L, B>,
+		Either<L, C>,
+		Either<L, D>,
+		Either<L, E>,
+		Either<L, F>,
+		Either<L, G>,
+		Either<L, H>,
+		Either<L, I>,
+		Either<L, J>
+	]
+): Either<L[], [A, B, C, D, E, F, G, H, I, J]>;
+function allEithers<L, A, B, C, D, E, F, G, H, I, J, K>(
+	eithers: [
+		Either<L, A>,
+		Either<L, B>,
+		Either<L, C>,
+		Either<L, D>,
+		Either<L, E>,
+		Either<L, F>,
+		Either<L, G>,
+		Either<L, H>,
+		Either<L, I>,
+		Either<L, J>,
+		Either<L, K>
+	]
+): Either<L[], [A, B, C, D, E, F, G, H, I, J, K]>;
+function allEithers<L, A>(eithers: Either<L, A>[]): Either<L[], A[]> {
+	const result = eithers.partitionMap(x => x);
+	return result.left.length > 0 ? Left(result.left) : Right(result.right);
+}
+
+function analisarPagina(preferencias: PreferenciasObject) {
+	const url = new URL(location.href);
+	const pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
+	if (Paginas.has(pagina)) {
+		const result = (Paginas.get(pagina) as (
+			preferencias: PreferenciasObject,
+			pagina: string
+		) => Resultado)(preferencias, pagina);
+		result.mapLeft(errors => {
+			errors.forEach(error => console.error(error));
+		});
+	} else {
+		console.log('Página desconhecida:', pagina);
 	}
-	return Validation.of(actual);
+}
+
+interface PreferenciasObject {
+	get(name: Preferencias): Maybe<string>;
+	observar(name: Preferencias, listener: (_: Maybe<string>) => void): void;
+	set(name: Preferencias, value: string): Promise<void>;
+	remove(name: Preferencias): Promise<void>;
+}
+const enum Preferencias {
+	JUIZ = 'juiz',
+	OPERADOR = 'operador',
+	UNIDADE = 'unidade',
+	SECAO = 'secao',
+	SUBSECAO = 'subsecao',
+	VARA = 'vara',
+}
+async function carregarPreferencias(): Promise<PreferenciasObject> {
+	const preferencias = new Map<Preferencias, string>(
+		await (browser.storage.local.get([
+			Preferencias.JUIZ,
+			Preferencias.OPERADOR,
+			Preferencias.UNIDADE,
+			Preferencias.SECAO,
+			Preferencias.SUBSECAO,
+			Preferencias.VARA,
+		]) as Promise<{ [k in Preferencias]: string | undefined }>).then(
+			prefs =>
+				Object.entries(prefs).filter(
+					(pair): pair is [Preferencias, string] => pair[1] !== undefined
+				) as [Preferencias, string][]
+		)
+	);
+
+	const listeners = new Map<Preferencias, ((_: Maybe<string>) => void)[]>();
+	browser.storage.onChanged.addListener((changes, areaName) => {
+		if (areaName !== 'local') return;
+		const changedKeys = Object.keys(changes) as Preferencias[];
+		changedKeys.forEach(key => {
+			const result = (changes as any)[key] as browser.storage.StorageChange;
+			if ('newValue' in result && typeof result.newValue === 'string') {
+				preferencias.set(key, result.newValue);
+			} else {
+				preferencias.delete(key);
+			}
+			(listeners.get(key) || []).forEach(listener =>
+				listener(Maybe.fromNullable(preferencias.get(key)))
+			);
+		});
+	});
+
+	return {
+		get(name) {
+			return Maybe.fromNullable(preferencias.get(name));
+		},
+		observar(name, listener) {
+			listeners.set(name, (listeners.get(name) || []).concat([listener]));
+			listener(this.get(name));
+		},
+		set(name, value) {
+			return browser.storage.local.set({ [name]: value });
+		},
+		remove(name) {
+			return browser.storage.local.remove(name);
+		},
+	};
+}
+
+function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
+	return allEithers([queryEither<HTMLFormElement>('form'), queryEither('#cpfCnpj')])
+		.chain(([form, cpfCnpj]) => {
+			const elts = form.elements;
+			return allEithers([
+				Right(form),
+				queryCampo('cdOperadorJuiz'),
+				queryCampo('idVara'),
+				queryCampo('codigoVara'),
+				queryCampo('processo'),
+				queryCampo<HTMLSelectElement>('idTipoAcao'),
+				queryCampo('nomeAutor'),
+				queryCampo('cpfCnpjAutor'),
+				Right(cpfCnpj),
+				queryCampo<HTMLSelectElement>('reus'),
+				queryCampo('valorUnico')
+					.map(Just)
+					.chainLeft(() => Right(Nothing)),
+			]);
+
+			function queryCampo<T extends Element = HTMLInputElement>(nome: string): Either<string, T> {
+				const elt = elts.namedItem(nome) as T | null;
+				return elt === null ? Left(`Campo não encontrado: "${nome}".`) : Right(elt);
+			}
+		})
+		.map(
+			([
+				form,
+				juiz,
+				idVara,
+				vara,
+				processo,
+				tipo,
+				nomeAutor,
+				docAutor,
+				docReu,
+				reus,
+				maybeValor,
+			]) => {
+				[juiz, vara, processo, tipo, nomeAutor].forEach(campo => {
+					campo.required = true;
+				});
+				maybeValor.ifJust(valor => {
+					valor.required = true;
+				});
+				idVara.addEventListener('change', onIdVaraChange);
+				if (idVara.value) onIdVaraChange();
+				function onIdVaraChange() {
+					vara.value = idVara.value;
+				}
+				preferencias.observar(Preferencias.JUIZ, maybe =>
+					maybe.ifJust(value => {
+						if (juiz.value === '') juiz.value = value;
+					})
+				);
+				preferencias.observar(Preferencias.VARA, maybe =>
+					maybe.ifJust(value => {
+						if (vara.value === '') vara.value = value;
+					})
+				);
+			}
+		);
+}
+
+function dologin(preferencias: PreferenciasObject) {
+	return queryEither<HTMLFormElement>('form')
+		.mapLeft(err => [err])
+		.chain(form => {
+			const collection = form.elements;
+			return allEithers([
+				Right(form),
+				queryCampo('unidade'),
+				queryCampo('operador'),
+				queryCampo('senha'),
+				queryCampo<RadioNodeList>('opcao_login'),
+			]);
+
+			function queryCampo<T extends Element | RadioNodeList = HTMLInputElement>(
+				name: string
+			): Either<string, T> {
+				const elt = collection.namedItem(name) as T | null;
+				return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
+			}
+		})
+		.map(([form, unidade, operador, senha, opcoesLogin]) => {
+			preferencias.observar(Preferencias.UNIDADE, maybe => {
+				unidade.setAttribute('placeholder', maybe.getOrElse(''));
+			});
+			preferencias.observar(Preferencias.OPERADOR, maybe => {
+				operador.setAttribute('placeholder', maybe.getOrElse(''));
+			});
+			opcoesLogin.forEach(opcao => {
+				opcao.addEventListener('click', focarCampoVazio);
+			});
+			window.addEventListener('load', focarCampoVazio);
+			form.addEventListener('submit', () => {
+				if (unidade.value === '') {
+					unidade.value = preferencias.get(Preferencias.UNIDADE).getOrElse('');
+				}
+				if (operador.value === '') {
+					operador.value = preferencias.get(Preferencias.OPERADOR).getOrElse('');
+				}
+			});
+
+			class Campo {
+				constructor(
+					readonly input: HTMLInputElement,
+					readonly preferencia?: Preferencias,
+					readonly next?: Campo
+				) {}
+				concat(that: Campo): Campo {
+					return new Campo(this.input, this.preferencia, this.next ? this.next.concat(that) : that);
+				}
+				focar() {
+					Maybe.fromNullable(this.preferencia)
+						.chain(preferencias.get)
+						.mapNullable(() => this.next)
+						.map(next => next.focar())
+						.getOrElseL(() => {
+							this.input.focus();
+						});
+				}
+			}
+
+			const camposAFocar = new Campo(unidade, Preferencias.UNIDADE)
+				.concat(new Campo(operador, Preferencias.OPERADOR))
+				.concat(new Campo(senha));
+
+			function focarCampoVazio() {
+				if (opcoesLogin.value === 'operador') {
+					setTimeout(() => {
+						camposAFocar.focar();
+					}, 100);
+				}
+			}
+		});
 }
 
 function formatNumber(num: number) {
@@ -991,46 +1231,10 @@ function formatNumber(num: number) {
 	});
 }
 
-function liftA<A, B>(mx: Maybe<A>, f: (x: A) => B): Maybe<B>;
-function liftA<A, B>(ax: Apply<A>, f: (x: A) => B): Apply<B> {
-	return ax.map(f);
-}
-
+function liftA2<L, A, B, C>(ex: Either<L, A>, ey: Either<L, B>, f: (x: A, y: B) => C): Either<L, C>;
 function liftA2<A, B, C>(mx: Maybe<A>, my: Maybe<B>, f: (x: A, y: B) => C): Maybe<C>;
 function liftA2<A, B, C>(ax: Apply<A>, ay: Apply<B>, f: (x: A, y: B) => C): Apply<C> {
 	return ay.ap(ax.map((x: A) => (y: B) => f(x, y)));
-}
-
-function liftA3<A, B, C, D>(
-	mx: Maybe<A>,
-	my: Maybe<B>,
-	mz: Maybe<C>,
-	f: (x: A, y: B, z: C) => D
-): Maybe<D>;
-function liftA3<A, B, C, D>(
-	ax: Apply<A>,
-	ay: Apply<B>,
-	az: Apply<C>,
-	f: (x: A, y: B, z: C) => D
-): Apply<D> {
-	return az.ap(ay.ap(ax.map((x: A) => (y: B) => (z: C) => f(x, y, z))));
-}
-
-function liftA4<A, B, C, D, E>(
-	mw: Maybe<A>,
-	mx: Maybe<B>,
-	my: Maybe<C>,
-	mz: Maybe<D>,
-	f: (w: A, x: B, y: C, z: D) => E
-): Maybe<E>;
-function liftA4<A, B, C, D, E>(
-	aw: Apply<A>,
-	ax: Apply<B>,
-	ay: Apply<C>,
-	az: Apply<D>,
-	f: (w: A, x: B, y: C, z: D) => E
-): Apply<E> {
-	return az.ap(ay.ap(ax.ap(aw.map((w: A) => (x: B) => (y: C) => (z: D) => f(w, x, y, z)))));
 }
 
 function padLeft(size: number, number: number): string {
@@ -1041,14 +1245,12 @@ function padLeft(size: number, number: number): string {
 	return result;
 }
 
-function query<T extends Element>(selector: string, context: NodeSelector = document): Promise<T> {
-	return new Promise((res, rej) => {
-		const elt = context.querySelector<T>(selector);
-		if (!elt) {
-			return rej(new QueryError(`Elemento não encontrado: '${selector}'.`, { context, selector }));
-		}
-		return res(elt);
-	});
+function queryEither<T extends Element>(
+	selector: string,
+	context: NodeSelector = document
+): Either<string, T> {
+	const elt = context.querySelector<T>(selector);
+	return elt === null ? Left(`Elemento não encontrado: '${selector}'.`) : Right(elt);
 }
 
 function queryAll<T extends Element>(selector: string, context: NodeSelector = document): T[] {
@@ -1058,22 +1260,27 @@ function queryAll<T extends Element>(selector: string, context: NodeSelector = d
 function queryMaybe<T extends Element>(
 	selector: string,
 	context: NodeSelector = document
-): never[] | [T] {
-	const elt = context.querySelector<T>(selector);
-	return elt === null ? [] : [elt];
+): Maybe<T> {
+	return Maybe.fromNullable(context.querySelector<T>(selector));
 }
 
 function queryInputByName(
 	name: string,
 	context: NodeSelector = document
-): Promise<HTMLInputElement> {
-	return new Promise((res, rej) => {
-		const elt = context.querySelector<HTMLInputElement>(`input[name="${name}"]`);
-		if (!elt) {
-			return rej(new QueryError(`Campo não encontrado: "${name}".`, { context, name }));
-		}
-		return res(elt);
-	});
+): Either<string, HTMLInputElement> {
+	const elt = context.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+	return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
 }
+
+// Constantes
+
+type Resultado = Either<string[], void>;
+const Paginas = new Map<string, (preferencias: PreferenciasObject, pagina: string) => Resultado>([
+	['dologin', dologin],
+	['conferirDadosMinutaBVInclusao', criarMinutaBVInclusao],
+	['conferirDadosMinutaSIInclusao', criarMinutaBVInclusao],
+	['criarMinutaBVInclusao', criarMinutaBVInclusao],
+	['criarMinutaSIInclusao', criarMinutaBVInclusao],
+]);
 
 main();
