@@ -3,6 +3,9 @@ function main() {
     Preferencias.init();
     new Bacen();
 }
+Array.prototype.filterMap = function (f) {
+    return this.reduce((ys, x) => f(x).fold(() => ys, y => (ys.push(y), ys)), []);
+};
 // Classes
 /**
  * Objeto principal do programa
@@ -24,127 +27,134 @@ class Bacen {
         const method = parametros.get('method') || '';
         if (this.pagina in this && typeof this[this.pagina] === 'function') {
             const result = this[this.pagina](method);
-            if (result instanceof Promise) {
-                result.catch(err => console.error(err));
-            }
+            result.catch(err => console.error(err));
         }
-        const observarPreferencia = (nome) => {
+        observarPreferencia(this, 'secao');
+        observarPreferencia(this, 'subsecao');
+        function observarPreferencia(bacen, nome) {
             Preferencias.observar(nome, (maybe) => {
-                this[nome] = maybe;
+                bacen[nome] = maybe;
             });
-        };
-        observarPreferencia('secao');
-        observarPreferencia('subsecao');
+        }
     }
     /**
      * Menu Minutas -> Incluir Minuta de Bloqueio de Valores -> Conferir dados da Minuta
      */
-    conferirDadosMinutaBVInclusao(method) {
-        assertStrictEquals('conferirDados', method);
-        if (this.tratarErros())
-            return;
-        liftA1(queryInputByName('senhaJuiz').filter(senhaJuiz => !senhaJuiz.disabled), senhaJuiz => {
-            senhaJuiz.focus();
-        }).altL(() => liftA1(query('[name="btnIncluir"]'), btnIncluir => {
+    async conferirDadosMinutaBVInclusao() {
+        await this.tratarErros().catch(err => this.criarMinutaBVInclusao().then(() => Promise.reject(err)));
+        try {
+            (await obterSenhaJuiz()).focus();
+        }
+        catch (errSenhaJuiz) {
+            const btnIncluir = await queryInputByName('btnIncluir');
             window.addEventListener('keypress', e => {
-                if (e.keyCode == 13) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    btnIncluir.click();
-                }
-            }, true);
-        }));
+                if (e.keyCode !== 13 /* ENTER */)
+                    return;
+                e.preventDefault();
+                e.stopPropagation();
+                btnIncluir.click();
+            });
+        }
+        function obterSenhaJuiz() {
+            return queryInputByName('senhaJuiz').then(senhaJuiz => senhaJuiz.disabled
+                ? Promise.reject(new Error('Campo "senhaJuiz" desabilitado.'))
+                : Promise.resolve(senhaJuiz));
+        }
     }
     /**
      * Menu Minutas -> Incluir Minuta de Requisição de Informações -> Conferir dados da Minuta
      */
-    conferirDadosMinutaSIInclusao(method) {
-        this.conferirDadosMinutaBVInclusao(method);
+    conferirDadosMinutaSIInclusao() {
+        return this.conferirDadosMinutaBVInclusao();
     }
     /**
      * Janela pop-up aberta ao adicionar pessoa na tela de inclusão de minuta
      * de requisição de informações
      */
-    consultarPessoa(method) {
-        this.consultarReu(method);
+    consultarPessoa() {
+        return this.consultarReu();
     }
-    consultarSolicitacoesProtocoladas(nomeInput, nomeMetodoOnChange) {
-        liftA2(queryInputByName(nomeInput), query('.botao'), (input, botao) => {
+    consultarSolicitacoesProtocoladas(nomeInput, tipo) {
+        return Promise.all([queryInputByName(nomeInput), query('input.botao')]).then(([input, botao]) => {
             input.focus();
-            input.addEventListener('change', () => this[nomeMetodoOnChange](input), true);
-            input.addEventListener('keypress', e => this.onProcessoKeypress(e, input), true);
-            botao.addEventListener('click', e => this.onBotaoClick(e), true);
+            input.addEventListener('change', () => tipo === 'processo'
+                ? this.onConsultaProcessoChange(input)
+                : this.onConsultaProtocoloChange(input));
+            input.addEventListener('keypress', e => this.onProcessoKeypress(e, input));
+            botao.addEventListener('click', e => this.onBotaoClick(e));
         });
     }
     /**
      * Menu Ordens judiciais -> Consultar Ordens Judiciais protocolizadas por Assessores
      */
-    consultarSolicitacoesProtocoladasAssessor(method) {
-        assertStrictEquals('editarCriteriosConsultaPorAssessor', method);
-        queryInputByName('dataInicial').map(input => {
-            input.focus();
-        });
-        vincular('cdOperadorAssessor', 'login');
-        vincular('cdOperadorJuiz', 'juiz');
-        function vincular(nomeInput, nomePreferencia) {
-            liftA1(queryInputByName(nomeInput), input => {
-                Preferencias.vincularInput(input, nomePreferencia, {
-                    focarSeVazio: true,
-                    salvarAoPreencher: false,
-                });
+    async consultarSolicitacoesProtocoladasAssessor() {
+        return Promise.all([
+            obterEFocar('dataInicial'),
+            obterEFocar('cdOperadorAssessor', 'login'),
+            obterEFocar('cdOperadorJuiz', 'juiz'),
+        ]);
+        async function obterEFocar(nomeInput, nomePreferencia) {
+            const input = await queryInputByName(nomeInput);
+            if (nomePreferencia === undefined) {
+                input.focus();
+                return;
+            }
+            return Preferencias.vincularInput(input, nomePreferencia, {
+                focarSeVazio: true,
+                salvarAoPreencher: false,
             });
         }
     }
     /**
      * Menu Ordens judiciais -> Consultar Ordens Judiciais por Juízo
      */
-    consultarSolicitacoesProtocoladasJuizo(method) {
-        assertStrictEquals('editarCriteriosConsultaPorVara', method);
-        vincular('codigoVara', 'vara');
-        vincular('operador', 'juiz');
-        function vincular(nomeInput, nomePreferencia) {
-            liftA1(queryInputByName(nomeInput), input => {
-                Preferencias.vincularInput(input, nomePreferencia, {
-                    focarSeVazio: true,
-                    salvarAoPreencher: false,
-                });
+    async consultarSolicitacoesProtocoladasJuizo() {
+        return Promise.all([vincular('codigoVara', 'vara'), vincular('operador', 'juiz')]);
+        async function vincular(nomeInput, nomePreferencia) {
+            return Preferencias.vincularInput(await queryInputByName(nomeInput), nomePreferencia, {
+                focarSeVazio: true,
+                salvarAoPreencher: false,
             });
         }
     }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Processo Judicial
      */
-    consultarSolicitacoesProtocoladasProcesso(method) {
-        assertStrictEquals('editarCriteriosConsultaPorProcesso', method);
-        this.consultarSolicitacoesProtocoladas('numeroProcesso', 'onConsultaProcessoChange');
+    consultarSolicitacoesProtocoladasProcesso() {
+        return this.consultarSolicitacoesProtocoladas('numeroProcesso', 'processo');
     }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Protocolo Registrado no BacenJud
      */
-    consultarSolicitacoesProtocoladasProtocolo(method) {
-        assertStrictEquals('editarCriteriosConsultaPorProtocolo', method);
-        this.consultarSolicitacoesProtocoladas('numeroProtocolo', 'onConsultaProtocoloChange');
+    consultarSolicitacoesProtocoladasProtocolo() {
+        return this.consultarSolicitacoesProtocoladas('numeroProtocolo', 'protocolo');
     }
     /**
      * Janela pop-up aberta ao adicionar réu
      */
-    consultarReu(method) {
-        assertStrictEquals('consultarReu', method);
-        window.addEventListener('unload', () => {
-            window.opener.postMessage('processaLista', location.origin);
-        }, true);
-        window.addEventListener('keypress', e => {
-            if (e.keyCode == 27) {
+    async consultarReu() {
+        window.addEventListener('unload', () => Promise.resolve()
+            .then(() => window.opener &&
+            typeof window.opener === 'object' &&
+            window.opener !== null &&
+            !window.opener.closed &&
+            window.opener.postMessage('processaLista', location.origin))
+            .catch(err => console.error(err)));
+        window.addEventListener('keypress', e => Promise.resolve()
+            .then(() => {
+            if (e.keyCode == 27 /* ESCAPE */) {
                 window.close();
             }
-        }, true);
+        })
+            .catch(err => console.error(err)));
     }
     /**
      * Menu Minutas -> Incluir Minuta de Bloqueio de Valores
      */
-    async criarMinutaBVInclusao(method) {
-        assertStrictEquals('criar', method);
-        await liftA2(queryInputByName('codigoVara'), queryInputByName('processo'), (codigoVara, processo) => {
+    async criarMinutaBVInclusao() {
+        const erros = [];
+        await Promise.all([queryInputByName('codigoVara'), queryInputByName('processo')])
+            .then(([codigoVara, processo]) => {
             processo.addEventListener('change', () => this.onProcessoChange(processo), true);
             processo.addEventListener('keypress', e => this.onProcessoKeypress(e, processo), true);
             processo.focus();
@@ -152,32 +162,50 @@ class Bacen {
                 focarSeVazio: true,
                 salvarAoPreencher: false,
             });
-        }).getOrElseL(() => Promise.reject(new Error(`Elementos necessários não encontrados: codigoVara, processo.`)));
-        return liftA1(queryInputByName('cdOperadorJuiz').filter(input => input.type !== 'hidden'), cdOperadorJuiz => {
+        })
+            .catch(err => {
+            erros.push(err);
+        });
+        await queryInputByName('cdOperadorJuiz')
+            .then(input => input.type === 'hidden'
+            ? Promise.reject(new Error('Campo "cdOperadorJuiz" oculto.'))
+            : Promise.resolve(input))
+            .then(cdOperadorJuiz => {
             return Preferencias.vincularInput(cdOperadorJuiz, 'juiz', {
                 focarSeVazio: true,
                 salvarAoPreencher: false,
             });
-        }).getOrElse(Promise.resolve());
+        })
+            .catch(errCdOperadorJuiz => {
+            erros.push(errCdOperadorJuiz);
+        });
+        if (erros.length > 0) {
+            return Promise.reject(new Error(erros.map(x => x.message).join('\n')));
+        }
     }
     /**
      * Menu Minutas -> Incluir Minuta de Requisição de Informações
      */
-    criarMinutaSIInclusao(method) {
-        this.criarMinutaBVInclusao(method);
+    criarMinutaSIInclusao() {
+        return this.criarMinutaBVInclusao();
     }
-    async dologin(_) {
-        return liftA4(queryInputByName('unidade'), queryInputByName('operador'), queryInputByName('senha'), query('#opcao_operador'), vincularCampos);
-        function vincularCampos(unidade, operador, senha, radio) {
-            Preferencias.vincularInput(unidade, 'unidade');
-            Preferencias.vincularInput(operador, 'login');
+    dologin(_) {
+        return Promise.all([
+            queryInputByName('unidade'),
+            queryInputByName('operador'),
+            queryInputByName('senha'),
+            query('#opcao_operador'),
+        ]).then(([unidade, operador, senha, radio]) => vincularCampos(unidade, operador, senha, radio));
+        async function vincularCampos(unidade, operador, senha, radio) {
+            await Promise.all([
+                Preferencias.vincularInput(unidade, 'unidade'),
+                Preferencias.vincularInput(operador, 'login'),
+            ]);
             window.addEventListener('load', preencher(senha, operador, unidade));
             radio.addEventListener('click', preencher(senha, operador, unidade));
         }
         function preencher(senha, operador, unidade) {
-            return () => setTimeout(() => {
-                preencherCampos(senha, operador, unidade).catch(err => console.error(err));
-            }, 100);
+            return () => setTimeout(() => preencherCampos(senha, operador, unidade), 100);
         }
         async function preencherCampos(senha, operador, unidade) {
             // Ordem dos campos de trás para frente, pois o último campo não preenchido restará focado.
@@ -228,7 +256,7 @@ class Bacen {
             throw new Error('Não foi possível obter os dados do processo.');
         }
         const text = await response.text();
-        this.preencher(text, modo);
+        this.preencher(text, modo).catch(err => console.error(err));
     }
     /**
      * Retorna o número do processo devidamente formatado
@@ -300,35 +328,35 @@ class Bacen {
             return { ok: false, motivo: 'erroDigitacao', valorInformado: input };
         }
     }
-    incluirMinuta(tipoMinuta, method) {
-        assertStrictEquals('incluir', method);
+    incluirMinuta(tipoMinuta) {
         const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
-        liftA1(query('fundoPadraoAClaro2')
-            .mapNullable(tbl => tbl.rows[0])
-            .mapNullable(row => row.cells[0])
-            .mapNullable(cell => cell.textContent)
-            .map(txt => txt.split(/\n/))
-            .filter(xs => xs.length > 2)
-            .map(xs => xs[2])
-            .map(txt => [txt, '', 'Deseja incluir nova minuta?'].join('\n')), msg => {
-            window.setTimeout(() => {
-                if (window.confirm(msg)) {
+        const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
+        return query(selector)
+            .then(cell => cell.textContent || '')
+            .then(txt => txt.split(/\n/))
+            .then(xs => (xs.length > 2 ? Promise.resolve(xs) : Promise.reject()))
+            .then(xs => xs[2])
+            .then(txt => [txt, '', 'Deseja incluir nova minuta?'].join('\n'))
+            .then(msg => {
+            setTimeout(() => {
+                if (confirm(msg)) {
                     location.href = paginaInclusao;
                 }
             }, 0);
-        });
+        })
+            .catch(() => Promise.reject(new Error(`Elemento não encontrador: "${selector}"`)));
     }
     /**
      * Minuta conferida e incluída
      */
-    incluirMinutaBV(method) {
-        this.incluirMinuta('BV', method);
+    incluirMinutaBV() {
+        this.incluirMinuta('BV');
     }
     /**
      * Minuta conferida e incluída
      */
-    incluirMinutaSI(method) {
-        this.incluirMinuta('SI', method);
+    incluirMinutaSI() {
+        this.incluirMinuta('SI');
     }
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Processo Judicial -> Botão "Consultar" -> Evento "click"
@@ -338,11 +366,16 @@ class Bacen {
         e.stopPropagation();
         this.submit = true;
         if (this.submit && this.valid && !this.buscando) {
-            liftA2(queryInputByName('numeroProcesso').alt(queryInputByName('numeroProtocolo')), query('form'), (input, form) => {
+            Promise.all([
+                queryInputByName('numeroProcesso').catch((err1) => queryInputByName('numeroProtocolo').catch((err2) => Promise.reject(new Error([err1, err2].map(x => x.message).join('\n'))))),
+                query('form'),
+            ])
+                .then(([input, form]) => {
                 input.select();
                 input.focus();
                 form.submit();
-            });
+            })
+                .catch(err => console.error(err));
         }
     }
     /**
@@ -357,21 +390,21 @@ class Bacen {
                 this.buscando = {
                     valor: valor,
                 };
-                this.getInfo(numproc.valor, 'consulta');
+                this.getInfo(numproc.valor, 'consulta').catch(err => console.error(err));
+                return;
             }
-            else if (numproc.ok) {
+            if (numproc.ok) {
                 input.value = numproc.valor;
                 this.valid = true;
+                return;
             }
-            else {
-                this.valid = false;
-                alert('Número de processo inválido: "' + valor + '".');
-                window.setTimeout(function () {
-                    input.value = valor;
-                    input.select();
-                    input.focus();
-                }, 100);
-            }
+            this.valid = false;
+            alert('Número de processo inválido: "' + valor + '".');
+            window.setTimeout(function () {
+                input.value = valor;
+                input.select();
+                input.focus();
+            }, 100);
         }
     }
     /**
@@ -396,19 +429,38 @@ class Bacen {
     /**
      * Função que atende ao evento change do Número do Processo
      */
-    onProcessoChange(input) {
+    async onProcessoChange(input) {
         const valor = input.value;
-        liftA1(query('form'), form => {
-            form.reset();
-        });
-        liftA1(query('[name="reus"]').chain(reus => Array.from(reus.options)
-            .map(reu => ((reu.selected = true), reu))
-            .reduce((acc, x) => acc.concat(Just([x])), Nothing)), () => {
-            if (this.pagina === 'criarMinutaBVInclusao') {
-                window.wrappedJSObject.excluirReu();
+        await queryInputByName('cdOperadorJuiz')
+            .then(cdOperadorJuiz => {
+            if (cdOperadorJuiz.type !== 'hidden') {
+                cdOperadorJuiz.setAttribute('value', cdOperadorJuiz.value);
             }
-            else if (this.pagina === 'criarMinutaSIInclusao') {
-                window.wrappedJSObject.excluirPessoa();
+        })
+            .catch(() => { });
+        await queryInputByName('codigoVara')
+            .then(codigoVara => {
+            codigoVara.setAttribute('value', codigoVara.value);
+        })
+            .catch(() => { });
+        await query('form')
+            .then(form => {
+            form.reset();
+        })
+            .catch(() => { });
+        await query('select[name="reus"]').then(select => {
+            const reus = Array.from(select.options);
+            if (reus.length) {
+                reus.forEach(reu => (reu.selected = true));
+                if (['criarMinutaBVInclusao', 'conferirDadosMinutaBVInclusao'].includes(this.pagina)) {
+                    window.wrappedJSObject.excluirReu();
+                }
+                else if (['criarMinutaSIInclusao', 'conferirDadosMinutaSIInclusao'].includes(this.pagina)) {
+                    window.wrappedJSObject.excluirPessoa();
+                }
+                else {
+                    console.log('esta página', this.pagina);
+                }
             }
         });
         if (valor) {
@@ -418,7 +470,7 @@ class Bacen {
                 this.buscando = {
                     valor: valor,
                 };
-                this.getInfo(numproc.valor, 'preencher');
+                return this.getInfo(numproc.valor, 'preencher');
             }
             else {
                 switch (numproc.motivo) {
@@ -442,17 +494,18 @@ class Bacen {
      * Função que atende ao evento keypress do campo Processo
      */
     onProcessoKeypress(e, input) {
+        console.log('keypress', e.keyCode);
         if (![9 /* TAB */, 13 /* ENTER */].includes(e.keyCode))
             return;
         e.preventDefault();
         e.stopPropagation();
         if (input.name === 'processo') {
-            liftA1(queryInputByName('idTipoAcao'), idTipoAcao => {
+            query('select[name="idTipoAcao"]').then(idTipoAcao => {
                 idTipoAcao.focus();
             });
         }
         else if (['numeroProcesso', 'numeroProtocolo'].includes(input.name)) {
-            liftA2(query('input.botao'), query('form'), (botao, form) => {
+            Promise.all([query('input.botao'), query('form')]).then(([botao, form]) => {
                 this.submit = e.keyCode == 13 /* ENTER */;
                 botao.focus();
                 if (this.submit && this.valid && !this.buscando) {
@@ -468,18 +521,16 @@ class Bacen {
      *
      * @param String Método utilizado pela página
      */
-    pesquisarPorProcesso(method) {
-        assertStrictEquals('pesquisarPorProcesso', method);
-        if (this.tratarErros())
-            return;
-        liftA2(query('.pagebanner')
-            .mapNullable(p => p.textContent)
-            .mapNullable(txt => txt.match(/^\d+/))
-            .map(xs => xs[0])
-            .map(Number), query('table#ordem')
-            .mapNullable(tbl => tbl.rows[1])
-            .mapNullable(row => row.cells[3])
-            .chain(cell => query('a', cell)), (registros, link) => {
+    async pesquisarPorProcesso() {
+        await this.tratarErros();
+        return Promise.all([
+            query('.pagebanner')
+                .then(p => (p.textContent || '').match(/^\d+/))
+                .then(x => (x === null ? Promise.reject() : Promise.resolve(x)))
+                .then(xs => Number(xs[0]))
+                .catch(() => Promise.reject(new Error('Elemento ".pagebanner" não possui conteúdo numérico.'))),
+            query('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(cell => query('a', cell)),
+        ]).then(([registros, link]) => {
             if (registros === 1) {
                 location.href = link.href;
             }
@@ -488,87 +539,93 @@ class Bacen {
     /**
      * Menu Ordens judiciais -> Consultar pelo Número do Protocolo Registrado no BacenJud -> Consultar
      */
-    pesquisarPorProtocolo(method) {
-        assertStrictEquals('pesquisarPorProtocolo', method);
-        if (this.tratarErros())
-            return;
+    pesquisarPorProtocolo() {
+        return this.tratarErros();
     }
     /**
      * Preenche os campos com as informações obtidas
      */
-    preencher(text, modo) {
+    async preencher(text, modo) {
         const parser = new DOMParser();
         const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
-        liftA2(Just(text)
-            .map(txt => parser.parseFromString(txt, 'text/xml'))
-            .chain(doc => query('return', doc))
-            .mapNullable(ret => ret.textContent)
-            .map(ret => parser.parseFromString(ret, 'text/xml')), queryInputByName(el), (processo, campoProcesso) => {
-            const erros = queryAll('Erro', processo)
-                .map(erro => erro.textContent || '')
-                .filter(texto => texto.trim() !== '');
-            if (erros.length) {
-                this.valid = false;
-                alert(erros.join('\n'));
-                campoProcesso.value = this.buscando.valor;
-                this.buscando = false;
-                campoProcesso.select();
-                campoProcesso.focus();
-                return;
-            }
-            this.valid = true;
+        const processo = await Promise.resolve(text)
+            .then(txt => parser.parseFromString(txt, 'text/xml'))
+            .then(doc => query('return', doc))
+            .then(ret => ret.textContent || '')
+            .then(ret => parser.parseFromString(ret, 'text/xml'));
+        const campoProcesso = await queryInputByName(el);
+        const erros = queryAll('Erro', processo)
+            .map(erro => erro.textContent || '')
+            .filter(texto => texto.trim() !== '');
+        if (erros.length) {
+            this.valid = false;
+            const msg = erros.join('\n');
+            alert(msg);
+            campoProcesso.value = this.buscando.valor;
             this.buscando = false;
-            liftA1(query('Processo Processo', processo)
-                .mapNullable(p => p.textContent)
-                .map(txt => txt.replace(/[^0-9]/g, '')), value => {
-                campoProcesso.value = value;
-            });
-            if (modo == 'preencher') {
-                const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
-                liftA2(queryInputByName('idTipoAcao'), query('CodClasse', processo).mapNullable(elt => elt.textContent), (tipoAcao, codClasse) => {
-                    if (tipoAcaoPorCodClasse.has(codClasse)) {
-                        tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse);
-                    }
-                });
-                liftA2(queryInputByName('valorUnico'), query('ValCausa', processo)
-                    .mapNullable(elt => elt.textContent)
-                    .map(Number)
-                    .filter(x => !isNaN(x))
-                    .map(formatNumber), (campoValor, valor) => {
-                    campoValor.value = valor;
-                });
-                const reus = [];
-                function getText(maybe, defaultValue) {
-                    const result = maybe.mapNullable(node => node.textContent);
-                    return defaultValue === undefined ? result : result.getOrElse(defaultValue);
-                }
-                queryAll('Partes Parte', processo).forEach(parte => {
-                    const maybeNomeAutor = queryInputByName('nomeAutor');
-                    const maybeCpfCnpjAutor = queryInputByName('cpfCnpjAutor');
-                    if (getText(query('Autor', parte), 'N') === 'S') {
-                        liftA2(maybeNomeAutor, maybeCpfCnpjAutor, (nomeAutor, cpfCnpjAutor) => {
-                            nomeAutor.value = getText(query('Nome', parte), '');
-                            cpfCnpjAutor.value = getText(query('CPF_CGC', parte), '');
-                        });
-                    }
-                    else if (getText(query('Réu', parte).alt(query('Reu', parte)), 'N') === 'S') {
-                        liftA1(getText(query('CPF_CGC', parte)), cpfCnpjReu => {
-                            reus.push(cpfCnpjReu);
-                        });
-                    }
-                });
-                this.processaLista(reus);
-            }
-            else if (modo == 'consulta') {
-                if (this.submit) {
-                    liftA2(queryInputByName('numeroProcesso'), query('form'), (processo, form) => {
-                        processo.select();
-                        processo.focus();
-                        form.submit();
-                    });
-                }
-            }
+            campoProcesso.select();
+            campoProcesso.focus();
+            return Promise.reject(new Error(msg));
+        }
+        this.valid = true;
+        this.buscando = false;
+        await query('Processo Processo', processo)
+            .then(p => p.textContent || '')
+            .then(txt => txt.replace(/[^0-9]/g, ''))
+            .then(value => {
+            campoProcesso.value = value;
         });
+        if (modo == 'preencher') {
+            const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
+            await Promise.all([
+                query('select[name="idTipoAcao"]'),
+                query('CodClasse', processo).then(elt => elt.textContent || ''),
+            ]).then(([tipoAcao, codClasse]) => {
+                if (tipoAcaoPorCodClasse.has(codClasse)) {
+                    tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse);
+                }
+            });
+            await Promise.all([
+                queryInputByName('valorUnico'),
+                query('ValCausa', processo)
+                    .then(elt => elt.textContent || '')
+                    .then(Number)
+                    .then(x => isNaN(x) || x === 0
+                    ? Promise.reject('Campo "ValCausa" não é um número válido.')
+                    : Promise.resolve(x))
+                    .then(formatNumber),
+            ])
+                .then(([campoValor, valor]) => {
+                campoValor.value = valor;
+            })
+                .catch(err => console.error(err));
+            const reus = [];
+            function getText(p, defaultValue) {
+                return p
+                    .then(x => x.textContent)
+                    .then(txt => (txt === null ? Promise.reject() : Promise.resolve(txt)))
+                    .catch(() => defaultValue);
+            }
+            await Promise.all(queryAll('Partes Parte', processo).map(async (parte) => {
+                if ((await getText(query('Autor', parte), 'N')) === 'S') {
+                    (await queryInputByName('nomeAutor')).value = await getText(query('Nome', parte), '');
+                    (await queryInputByName('cpfCnpjAutor')).value = await getText(query('CPF_CGC', parte), '');
+                }
+                else if ((await getText(query('Réu', parte).catch(() => query('Reu', parte)), 'N')) === 'S') {
+                    reus.push(await getText(query('CPF_CGC', parte), ''));
+                }
+            }));
+            this.processaLista(reus);
+        }
+        else if (modo == 'consulta') {
+            if (this.submit) {
+                Promise.all([queryInputByName('numeroProcesso'), query('form')]).then(([processo, form]) => {
+                    processo.select();
+                    processo.focus();
+                    form.submit();
+                });
+            }
+        }
     }
     /**
      * Adiciona os réus um a um
@@ -584,7 +641,10 @@ class Bacen {
         }
         if (this.reus.length) {
             const documento = this.reus.shift();
-            liftA2(query('#cpfCnpj'), query('#botaoIncluirCpfCnpj'), (cpf, botao) => {
+            Promise.all([
+                query('#cpfCnpj'),
+                query('#botaoIncluirCpfCnpj'),
+            ]).then(([cpf, botao]) => {
                 cpf.value = documento;
                 botao.disabled = false;
                 botao.focus();
@@ -592,30 +652,62 @@ class Bacen {
             });
         }
         else {
-            liftA1(queryInputByName('idTipoAcao').filter(input => input.value === ''), input => {
+            query('select[name="idTipoAcao"]')
+                .then(input => (input.value === '' ? Promise.resolve(input) : Promise.reject()))
+                .then(input => {
                 input.focus();
-            }).altL(() => liftA1(queryInputByName('valorUnico'), input => {
+            })
+                .catch(() => queryInputByName('valorUnico').then(input => {
                 input.select();
                 input.focus();
             }));
         }
     }
-    tratarErros() {
-        const erros = queryAll('.msgErro').map(erro => {
+    async tratarErros() {
+        const erros = queryAll('.msgErro')
+            .map(erro => {
             erro.innerHTML = erro.innerHTML
                 .replace(/\n?•(\&nbsp;)?/g, '')
                 .replace('<b>', '&ldquo;')
                 .replace('</b>', '&rdquo;');
-            return erro.textContent;
-        });
-        if (erros.length) {
-            const msgErro = erros.join('\n');
-            alert(msgErro);
-            history.go(-1);
-            return true;
+            return (erro.textContent || '').trim();
+        })
+            .filter(x => x !== '');
+        if (erros.length > 0) {
+            const msg = erros.join('\n');
+            alert(msg);
+            throw new Error(msg);
         }
-        return false;
     }
+}
+class Validation {
+    constructor(fold) {
+        this.fold = fold;
+    }
+    altL(lazy) {
+        return this.fold(theseErrors => lazy().fold(thoseErrors => Failure(theseErrors.concat(thoseErrors)), Success), Success);
+    }
+    ap(that) {
+        return this.fold(theseErrors => Failure(that.fold(thoseErrors => theseErrors.concat(thoseErrors), () => theseErrors)), x => that.fold(Failure, f => Success(f(x))));
+    }
+    chain(f) {
+        return this.fold(Failure, f);
+    }
+    map(f) {
+        return this.fold(Failure, x => Success(f(x)));
+    }
+    static fail(error) {
+        return Failure([error]);
+    }
+    static of(value) {
+        return Success(value);
+    }
+}
+function Failure(errors) {
+    return new Validation((F, _) => F(errors));
+}
+function Success(value) {
+    return new Validation((_, S) => S(value));
 }
 class Maybe {
     constructor(fold) {
@@ -730,11 +822,18 @@ class Preferencias {
 Preferencias.initialized = false;
 Preferencias.inputs = new Map();
 Preferencias.callbacks = new Map();
+class QueryError extends Error {
+    constructor(msg, data) {
+        super(msg);
+        this.data = data;
+    }
+}
 // Funções
 function assertStrictEquals(expected, actual) {
     if (actual !== expected) {
-        throw new Error(`"${actual}" !== "${expected}".`);
+        return Validation.fail(`"${actual}" !== "${expected}".`);
     }
+    return Validation.of(actual);
 }
 function formatNumber(num) {
     return num.toLocaleString('pt-BR', {
@@ -744,7 +843,7 @@ function formatNumber(num) {
         useGrouping: true,
     });
 }
-function liftA1(ax, f) {
+function liftA(ax, f) {
     return ax.map(f);
 }
 function liftA2(ax, ay, f) {
@@ -764,12 +863,28 @@ function padLeft(size, number) {
     return result;
 }
 function query(selector, context = document) {
-    return Maybe.fromNullable(context.querySelector(selector));
+    return new Promise((res, rej) => {
+        const elt = context.querySelector(selector);
+        if (!elt) {
+            return rej(new QueryError(`Elemento não encontrado: '${selector}'.`, { context, selector }));
+        }
+        return res(elt);
+    });
 }
 function queryAll(selector, context = document) {
     return Array.from(context.querySelectorAll(selector));
 }
+function queryMaybe(selector, context = document) {
+    const elt = context.querySelector(selector);
+    return elt === null ? [] : [elt];
+}
 function queryInputByName(name, context = document) {
-    return Maybe.fromNullable(context.querySelector(`input[name="${name}"]`));
+    return new Promise((res, rej) => {
+        const elt = context.querySelector(`input[name="${name}"]`);
+        if (!elt) {
+            return rej(new QueryError(`Campo não encontrado: "${name}".`, { context, name }));
+        }
+        return res(elt);
+    });
 }
 main();
