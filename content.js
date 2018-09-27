@@ -1,6 +1,8 @@
 "use strict";
-function main() {
-    carregarPreferencias().then(preferencias => analisarPagina(preferencias));
+async function main() {
+    const preferencias = await carregarPreferencias();
+    await whenDocumentInteractive();
+    analisarPagina(preferencias);
 }
 Array.prototype.filterMap = function (f) {
     const ys = [];
@@ -71,7 +73,7 @@ class Bacen {
     consultarSolicitacoesProtocoladas(nomeInput, tipo) {
         return Promise.all([
             queryInputByName(nomeInput),
-            queryEither('input.botao'),
+            queryValidation('input.botao'),
         ]).then(([input, botao]) => {
             input.focus();
             input.addEventListener('change', () => tipo === 'processo'
@@ -294,7 +296,7 @@ class Bacen {
     incluirMinuta(tipoMinuta) {
         const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
         const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
-        return queryEither(selector)
+        return queryValidation(selector)
             .then(cell => cell.textContent || '')
             .then(txt => txt.split(/\n/))
             .then(xs => (xs.length > 2 ? Promise.resolve(xs) : Promise.reject()))
@@ -331,7 +333,7 @@ class Bacen {
         if (this.submit && this.valid && !this.buscando) {
             Promise.all([
                 queryInputByName('numeroProcesso').catch((err1) => queryInputByName('numeroProtocolo').catch((err2) => Promise.reject(new Error([err1, err2].map(x => x.message).join('\n'))))),
-                queryEither('form'),
+                queryValidation('form'),
             ])
                 .then(([input, form]) => {
                 input.select();
@@ -406,12 +408,12 @@ class Bacen {
             codigoVara.setAttribute('value', codigoVara.value);
         })
             .catch(() => { });
-        await queryEither('form')
+        await queryValidation('form')
             .then(form => {
             form.reset();
         })
             .catch(() => { });
-        await queryEither('select[name="reus"]').then(select => {
+        await queryValidation('select[name="reus"]').then(select => {
             const reus = Array.from(select.options);
             if (reus.length) {
                 reus.forEach(reu => (reu.selected = true));
@@ -463,14 +465,14 @@ class Bacen {
         e.preventDefault();
         e.stopPropagation();
         if (input.name === 'processo') {
-            queryEither('select[name="idTipoAcao"]').then(idTipoAcao => {
+            queryValidation('select[name="idTipoAcao"]').then(idTipoAcao => {
                 idTipoAcao.focus();
             });
         }
         else if (['numeroProcesso', 'numeroProtocolo'].includes(input.name)) {
             Promise.all([
-                queryEither('input.botao'),
-                queryEither('form'),
+                queryValidation('input.botao'),
+                queryValidation('form'),
             ]).then(([botao, form]) => {
                 this.submit = e.keyCode == 13 /* ENTER */;
                 botao.focus();
@@ -490,12 +492,12 @@ class Bacen {
     async pesquisarPorProcesso() {
         await this.tratarErros();
         return Promise.all([
-            queryEither('.pagebanner')
+            queryValidation('.pagebanner')
                 .then(p => (p.textContent || '').match(/^\d+/))
                 .then(x => (x === null ? Promise.reject() : Promise.resolve(x)))
                 .then(xs => Number(xs[0]))
                 .catch(() => Promise.reject(new Error('Elemento ".pagebanner" não possui conteúdo numérico.'))),
-            queryEither('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(cell => queryEither('a', cell)),
+            queryValidation('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(cell => queryValidation('a', cell)),
         ]).then(([registros, link]) => {
             if (registros === 1) {
                 location.href = link.href;
@@ -516,7 +518,7 @@ class Bacen {
         const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
         const processo = await Promise.resolve(text)
             .then(txt => parser.parseFromString(txt, 'text/xml'))
-            .then(doc => queryEither('return', doc))
+            .then(doc => queryValidation('return', doc))
             .then(ret => ret.textContent || '')
             .then(ret => parser.parseFromString(ret, 'text/xml'));
         const campoProcesso = await queryInputByName(el);
@@ -535,7 +537,7 @@ class Bacen {
         }
         this.valid = true;
         this.buscando = false;
-        await queryEither('Processo Processo', processo)
+        await queryValidation('Processo Processo', processo)
             .then(p => p.textContent || '')
             .then(txt => txt.replace(/[^0-9]/g, ''))
             .then(value => {
@@ -544,8 +546,8 @@ class Bacen {
         if (modo == 'preencher') {
             const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
             await Promise.all([
-                queryEither('select[name="idTipoAcao"]'),
-                queryEither('CodClasse', processo).then(elt => elt.textContent || ''),
+                queryValidation('select[name="idTipoAcao"]'),
+                queryValidation('CodClasse', processo).then(elt => elt.textContent || ''),
             ]).then(([tipoAcao, codClasse]) => {
                 if (tipoAcaoPorCodClasse.has(codClasse)) {
                     tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse);
@@ -553,7 +555,7 @@ class Bacen {
             });
             await Promise.all([
                 queryInputByName('valorUnico'),
-                queryEither('ValCausa', processo)
+                queryValidation('ValCausa', processo)
                     .then(elt => elt.textContent || '')
                     .then(Number)
                     .then(x => isNaN(x) || x === 0
@@ -573,12 +575,12 @@ class Bacen {
                     .catch(() => defaultValue);
             }
             await Promise.all(queryAll('Partes Parte', processo).map(async (parte) => {
-                if ((await getText(queryEither('Autor', parte), 'N')) === 'S') {
-                    (await queryInputByName('nomeAutor')).value = await getText(queryEither('Nome', parte), '');
-                    (await queryInputByName('cpfCnpjAutor')).value = await getText(queryEither('CPF_CGC', parte), '');
+                if ((await getText(queryValidation('Autor', parte), 'N')) === 'S') {
+                    (await queryInputByName('nomeAutor')).value = await getText(queryValidation('Nome', parte), '');
+                    (await queryInputByName('cpfCnpjAutor')).value = await getText(queryValidation('CPF_CGC', parte), '');
                 }
-                else if ((await getText(queryEither('Réu', parte).catch(() => queryEither('Reu', parte)), 'N')) === 'S') {
-                    reus.push(await getText(queryEither('CPF_CGC', parte), ''));
+                else if ((await getText(queryValidation('Réu', parte).catch(() => queryValidation('Reu', parte)), 'N')) === 'S') {
+                    reus.push(await getText(queryValidation('CPF_CGC', parte), ''));
                 }
             }));
             this.processaLista(reus);
@@ -587,7 +589,7 @@ class Bacen {
             if (this.submit) {
                 Promise.all([
                     queryInputByName('numeroProcesso'),
-                    queryEither('form'),
+                    queryValidation('form'),
                 ]).then(([processo, form]) => {
                     processo.select();
                     processo.focus();
@@ -611,8 +613,8 @@ class Bacen {
         if (this.reus.length) {
             const documento = this.reus.shift();
             Promise.all([
-                queryEither('#cpfCnpj'),
-                queryEither('#botaoIncluirCpfCnpj'),
+                queryValidation('#cpfCnpj'),
+                queryValidation('#botaoIncluirCpfCnpj'),
             ]).then(([cpf, botao]) => {
                 cpf.value = documento;
                 botao.disabled = false;
@@ -621,7 +623,7 @@ class Bacen {
             });
         }
         else {
-            queryEither('select[name="idTipoAcao"]')
+            queryValidation('select[name="idTipoAcao"]')
                 .then(input => (input.value === '' ? Promise.resolve(input) : Promise.reject()))
                 .then(input => {
                 input.focus();
@@ -675,11 +677,44 @@ class Either {
         return Right(value);
     }
 }
+function whenDocumentInteractive() {
+    return new Promise(res => {
+        if (document.readyState === 'loading') {
+            document.addEventListener('readystatechange', onReadyStateChange);
+        }
+        else {
+            res();
+        }
+        function onReadyStateChange() {
+            if (document.readyState !== 'loading') {
+                document.removeEventListener('readystatechange', onReadyStateChange);
+                res();
+            }
+        }
+    });
+}
 function Left(leftValue, _rightValue) {
     return new Either((L, _) => L(leftValue));
 }
 function Right(rightValue, _leftValue) {
     return new Either((_, R) => R(rightValue));
+}
+class IO {
+    constructor(unsafePerformIO) {
+        this.unsafePerformIO = unsafePerformIO;
+    }
+    ap(that) {
+        return new IO(() => that.unsafePerformIO()(this.unsafePerformIO()));
+    }
+    chain(f) {
+        return new IO(() => f(this.unsafePerformIO()).unsafePerformIO());
+    }
+    map(f) {
+        return new IO(() => f(this.unsafePerformIO()));
+    }
+    static of(value) {
+        return new IO(() => value);
+    }
 }
 class Maybe {
     constructor(fold) {
@@ -806,18 +841,42 @@ class QueryError extends Error {
         this.data = data;
     }
 }
-function allEithers(eithers) {
-    const result = eithers.partitionMap(x => x);
-    return result.left.length > 0 ? Left(result.left) : Right(result.right);
+class Validation {
+    constructor(fold) {
+        this.fold = fold;
+    }
+    ap(that) {
+        return that.fold(thoseErrors => Failure(this.fold(theseErrors => thoseErrors.concat(theseErrors), () => thoseErrors)), f => this.map(f));
+    }
+    chain(f) {
+        return this.fold(Failure, f);
+    }
+    map(f) {
+        return this.fold(Failure, x => Success(f(x)));
+    }
+    static fail(error) {
+        return Failure([error]);
+    }
+    static of(value) {
+        return Success(value);
+    }
 }
+function Failure(errors) {
+    return new Validation((F, _) => F(errors));
+}
+function Success(value) {
+    return new Validation((_, S) => S(value));
+}
+// Funções
 function analisarPagina(preferencias) {
     const url = new URL(location.href);
     const pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
-    if (Paginas.has(pagina)) {
-        const result = Paginas.get(pagina)(preferencias, pagina);
-        result.mapLeft(errors => {
-            errors.forEach(error => console.error(error));
-        });
+    const acao = Paginas.get(pagina);
+    if (acao) {
+        const result = acao(preferencias, pagina);
+        result.fold(errors => {
+            console.log('Erro(s) encontrado(s):', errors);
+        }, () => { });
     }
     else {
         console.log('Página desconhecida:', pagina);
@@ -865,118 +924,93 @@ async function carregarPreferencias() {
     };
 }
 function criarMinutaBVInclusao(preferencias) {
-    return allEithers([queryEither('form'), queryEither('#cpfCnpj')])
-        .chain(([form, cpfCnpj]) => {
-        const elts = form.elements;
-        return allEithers([
-            Right(form),
-            queryCampo('cdOperadorJuiz'),
-            queryCampo('idVara'),
-            queryCampo('codigoVara'),
-            queryCampo('processo'),
-            queryCampo('idTipoAcao'),
-            queryCampo('nomeAutor'),
-            queryCampo('cpfCnpjAutor'),
-            Right(cpfCnpj),
-            queryCampo('reus'),
-            queryCampo('valorUnico')
-                .map(Just)
-                .chainLeft(() => Right(Nothing)),
-        ]);
-        function queryCampo(nome) {
-            const elt = elts.namedItem(nome);
-            return elt === null ? Left(`Campo não encontrado: "${nome}".`) : Right(elt);
-        }
+    return liftA2(queryValidation('form'), queryValidation('#cpfCnpj'), (form, cpfCnpj) => {
+        const queryCampo = queryCampoFactory(form.elements);
+        return liftA3(liftA4(Success(form), queryCampo('cdOperadorJuiz'), queryCampo('idVara'), queryCampo('codigoVara'), (form, juiz, idVara, vara) => ({ form, juiz, idVara, vara })), liftA4(queryCampo('processo'), queryCampo('idTipoAcao'), queryCampo('nomeAutor'), queryCampo('cpfCnpjAutor'), (processo, tipo, nomeAutor, docAutor) => ({ processo, tipo, nomeAutor, docAutor })), liftA3(Success(cpfCnpj), queryCampo('reus'), Success(queryCampo('valorUnico').fold(() => Nothing, Just)), (docReu, reus, maybeValor) => ({ docReu, reus, maybeValor })), (a, b, c) => Object.assign({}, a, b, c));
     })
-        .map(([form, juiz, idVara, vara, processo, tipo, nomeAutor, docAutor, docReu, reus, maybeValor,]) => {
-        [juiz, vara, processo, tipo, nomeAutor].forEach(campo => {
-            campo.required = true;
-        });
-        maybeValor.ifJust(valor => {
-            valor.required = true;
-        });
+        .chain(x => x)
+        .map(({ form, juiz, idVara, vara, processo, tipo, nomeAutor, docAutor, docReu, reus, maybeValor, }) => {
+        campoRequerido(juiz);
+        campoRequerido(vara);
+        campoRequerido(processo);
+        campoRequerido(tipo);
+        campoRequerido(nomeAutor);
+        maybeValor.ifJust(campoRequerido);
         idVara.addEventListener('change', onIdVaraChange);
         if (idVara.value)
             onIdVaraChange();
+        observarPreferencia(juiz, "juiz" /* JUIZ */);
+        observarPreferencia(vara, "vara" /* VARA */);
+        const template = document.createElement('template');
+        template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;" hidden>Aguarde, carregando...</div>`;
+        const div = document.importNode(template.content, true).firstChild;
+        document.body.appendChild(div);
+        processo.addEventListener('change', () => {
+            div.style.display = 'grid';
+            new Promise(res => {
+                setTimeout(res, 1000);
+            }).then(() => {
+                div.style.display = 'none';
+            });
+        });
         function onIdVaraChange() {
             vara.value = idVara.value;
         }
-        preferencias.observar("juiz" /* JUIZ */, maybe => maybe.ifJust(value => {
-            if (juiz.value === '')
-                juiz.value = value;
-        }));
-        preferencias.observar("vara" /* VARA */, maybe => maybe.ifJust(value => {
-            if (vara.value === '')
-                vara.value = value;
-        }));
     });
+    function observarPreferencia(input, preferencia) {
+        preferencias.observar(preferencia, maybe => {
+            maybe.ifJust(value => {
+                if (input.value === '') {
+                    input.value = value;
+                }
+            });
+        });
+    }
+    function campoRequerido(campo) {
+        campo.required = true;
+    }
 }
 function dologin(preferencias) {
-    return queryEither('form')
-        .mapLeft(err => [err])
-        .chain(form => {
-        const collection = form.elements;
-        return allEithers([
-            Right(form),
-            queryCampo('unidade'),
-            queryCampo('operador'),
-            queryCampo('senha'),
-            queryCampo('opcao_login'),
-        ]);
-        function queryCampo(name) {
-            const elt = collection.namedItem(name);
-            return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
-        }
-    })
-        .map(([form, unidade, operador, senha, opcoesLogin]) => {
-        preferencias.observar("unidade" /* UNIDADE */, maybe => {
-            unidade.setAttribute('placeholder', maybe.getOrElse(''));
-        });
-        preferencias.observar("operador" /* OPERADOR */, maybe => {
-            operador.setAttribute('placeholder', maybe.getOrElse(''));
-        });
-        opcoesLogin.forEach(opcao => {
-            opcao.addEventListener('click', focarCampoVazio);
-        });
-        window.addEventListener('load', focarCampoVazio);
-        form.addEventListener('submit', () => {
-            if (unidade.value === '') {
-                unidade.value = preferencias.get("unidade" /* UNIDADE */).getOrElse('');
+    return queryValidation('form').chain(form => {
+        const queryCampo = queryCampoFactory(form.elements);
+        const vUnidade = queryCampo('unidade');
+        const vOperador = queryCampo('operador');
+        const vSenha = queryCampo('senha');
+        const vOpcoesLogin = queryCampo('opcao_login');
+        return liftA4(vUnidade, vOperador, vSenha, vOpcoesLogin, (unidade, operador, senha, opcoesLogin) => {
+            const observarPreferencia = observarPreferenciaFactory(preferencias);
+            observarPreferencia(unidade, "unidade" /* UNIDADE */);
+            observarPreferencia(operador, "operador" /* OPERADOR */);
+            form.addEventListener('submit', () => {
+                preencherSeVazio(unidade, "unidade" /* UNIDADE */);
+                preencherSeVazio(operador, "operador" /* OPERADOR */);
+            });
+            opcoesLogin.forEach(opcao => {
+                opcao.addEventListener('click', verificarFoco);
+            });
+            window.addEventListener('load', verificarFoco);
+            function focarCampoSemPreferencia() {
+                focarSePreferenciaVazia(unidade, "unidade" /* UNIDADE */, () => focarSePreferenciaVazia(operador, "operador" /* OPERADOR */, () => {
+                    senha.focus();
+                }));
             }
-            if (operador.value === '') {
-                operador.value = preferencias.get("operador" /* OPERADOR */).getOrElse('');
+            function verificarFoco() {
+                if (opcoesLogin.value === 'operador') {
+                    setTimeout(focarCampoSemPreferencia, 100);
+                }
             }
         });
-        class Campo {
-            constructor(input, preferencia, next) {
-                this.input = input;
-                this.preferencia = preferencia;
-                this.next = next;
-            }
-            concat(that) {
-                return new Campo(this.input, this.preferencia, this.next ? this.next.concat(that) : that);
-            }
-            focar() {
-                Maybe.fromNullable(this.preferencia)
-                    .chain(preferencias.get)
-                    .mapNullable(() => this.next)
-                    .map(next => next.focar())
-                    .getOrElseL(() => {
-                    this.input.focus();
-                });
-            }
-        }
-        const camposAFocar = new Campo(unidade, "unidade" /* UNIDADE */)
-            .concat(new Campo(operador, "operador" /* OPERADOR */))
-            .concat(new Campo(senha));
-        function focarCampoVazio() {
-            if (opcoesLogin.value === 'operador') {
-                setTimeout(() => {
-                    camposAFocar.focar();
-                }, 100);
-            }
-        }
     });
+    function focarSePreferenciaVazia(input, preferencia, senao) {
+        preferencias.get(preferencia).fold(() => {
+            input.focus();
+        }, senao);
+    }
+    function preencherSeVazio(input, preferencia) {
+        if (input.value === '') {
+            input.value = preferencias.get(preferencia).getOrElse('');
+        }
+    }
 }
 function formatNumber(num) {
     return num.toLocaleString('pt-BR', {
@@ -989,6 +1023,19 @@ function formatNumber(num) {
 function liftA2(ax, ay, f) {
     return ay.ap(ax.map((x) => (y) => f(x, y)));
 }
+function liftA3(ax, ay, az, f) {
+    return az.ap(ay.ap(ax.map((x) => (y) => (z) => f(x, y, z))));
+}
+function liftA4(aw, ax, ay, az, f) {
+    return az.ap(ay.ap(ax.ap(aw.map((w) => (x) => (y) => (z) => f(w, x, y, z)))));
+}
+function observarPreferenciaFactory(preferencias) {
+    return function observarPreferencia(input, preferencia) {
+        preferencias.observar(preferencia, maybe => {
+            input.setAttribute('placeholder', maybe.getOrElse(''));
+        });
+    };
+}
 function padLeft(size, number) {
     let result = String(number);
     while (result.length < size) {
@@ -996,19 +1043,25 @@ function padLeft(size, number) {
     }
     return result;
 }
-function queryEither(selector, context = document) {
-    const elt = context.querySelector(selector);
-    return elt === null ? Left(`Elemento não encontrado: '${selector}'.`) : Right(elt);
-}
 function queryAll(selector, context = document) {
     return Array.from(context.querySelectorAll(selector));
+}
+function queryCampoFactory(collection) {
+    return function queryCampo(nome) {
+        const elt = collection.namedItem(nome);
+        if (elt === null)
+            return Validation.fail(`Campo não encontrado: "${nome}".`);
+        return Success(elt);
+    };
 }
 function queryMaybe(selector, context = document) {
     return Maybe.fromNullable(context.querySelector(selector));
 }
-function queryInputByName(name, context = document) {
-    const elt = context.querySelector(`input[name="${name}"]`);
-    return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
+function queryValidation(selector, context = document) {
+    const elt = context.querySelector(selector);
+    return elt === null
+        ? Validation.fail(`Elemento não encontrado: '${selector}'.`)
+        : Validation.of(elt);
 }
 const Paginas = new Map([
     ['dologin', dologin],

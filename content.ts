@@ -1,5 +1,7 @@
-function main() {
-	carregarPreferencias().then(preferencias => analisarPagina(preferencias));
+async function main() {
+	const preferencias = await carregarPreferencias();
+	await whenDocumentInteractive();
+	analisarPagina(preferencias);
 }
 
 // Interfaces
@@ -101,7 +103,7 @@ class Bacen {
 	consultarSolicitacoesProtocoladas(nomeInput: string, tipo: 'processo' | 'protocolo') {
 		return Promise.all([
 			queryInputByName(nomeInput),
-			queryEither<HTMLInputElement>('input.botao'),
+			queryValidation<HTMLInputElement>('input.botao'),
 		]).then(([input, botao]) => {
 			input.focus();
 			input.addEventListener(
@@ -347,7 +349,7 @@ class Bacen {
 	incluirMinuta(tipoMinuta: 'BV' | 'SI') {
 		const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
 		const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
-		return queryEither<HTMLTableCellElement>(selector)
+		return queryValidation<HTMLTableCellElement>(selector)
 			.then(cell => cell.textContent || '')
 			.then(txt => txt.split(/\n/))
 			.then(xs => (xs.length > 2 ? Promise.resolve(xs) : Promise.reject()))
@@ -391,7 +393,7 @@ class Bacen {
 						Promise.reject(new Error([err1, err2].map(x => x.message).join('\n')))
 					)
 				),
-				queryEither<HTMLFormElement>('form'),
+				queryValidation<HTMLFormElement>('form'),
 			])
 				.then(([input, form]) => {
 					input.select();
@@ -468,12 +470,12 @@ class Bacen {
 				codigoVara.setAttribute('value', codigoVara.value);
 			})
 			.catch(() => {});
-		await queryEither<HTMLFormElement>('form')
+		await queryValidation<HTMLFormElement>('form')
 			.then(form => {
 				form.reset();
 			})
 			.catch(() => {});
-		await queryEither<HTMLSelectElement>('select[name="reus"]').then(select => {
+		await queryValidation<HTMLSelectElement>('select[name="reus"]').then(select => {
 			const reus = Array.from(select.options);
 			if (reus.length) {
 				reus.forEach(reu => (reu.selected = true));
@@ -526,13 +528,13 @@ class Bacen {
 		e.preventDefault();
 		e.stopPropagation();
 		if (input.name === 'processo') {
-			queryEither<HTMLSelectElement>('select[name="idTipoAcao"]').then(idTipoAcao => {
+			queryValidation<HTMLSelectElement>('select[name="idTipoAcao"]').then(idTipoAcao => {
 				idTipoAcao.focus();
 			});
 		} else if (['numeroProcesso', 'numeroProtocolo'].includes(input.name)) {
 			Promise.all([
-				queryEither<HTMLInputElement>('input.botao'),
-				queryEither<HTMLFormElement>('form'),
+				queryValidation<HTMLInputElement>('input.botao'),
+				queryValidation<HTMLFormElement>('form'),
 			]).then(([botao, form]) => {
 				this.submit = e.keyCode == KeyCode.ENTER;
 				botao.focus();
@@ -553,16 +555,16 @@ class Bacen {
 	async pesquisarPorProcesso() {
 		await this.tratarErros();
 		return Promise.all([
-			queryEither('.pagebanner')
+			queryValidation('.pagebanner')
 				.then(p => (p.textContent || '').match(/^\d+/))
 				.then(x => (x === null ? Promise.reject() : Promise.resolve(x)))
 				.then(xs => Number(xs[0]))
 				.catch(() =>
 					Promise.reject(new Error('Elemento ".pagebanner" não possui conteúdo numérico.'))
 				),
-			queryEither<HTMLTableElement>('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(
-				cell => queryEither<HTMLAnchorElement>('a', cell)
-			),
+			queryValidation<HTMLTableElement>(
+				'table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)'
+			).then(cell => queryValidation<HTMLAnchorElement>('a', cell)),
 		]).then(([registros, link]) => {
 			if (registros === 1) {
 				location.href = link.href;
@@ -585,7 +587,7 @@ class Bacen {
 		const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
 		const processo = await Promise.resolve(text)
 			.then(txt => parser.parseFromString(txt, 'text/xml') as XMLDocument)
-			.then(doc => queryEither('return', doc))
+			.then(doc => queryValidation('return', doc))
 			.then(ret => ret.textContent || '')
 			.then(ret => parser.parseFromString(ret, 'text/xml') as XMLDocument);
 
@@ -606,7 +608,7 @@ class Bacen {
 
 		this.valid = true;
 		this.buscando = false;
-		await queryEither('Processo Processo', processo)
+		await queryValidation('Processo Processo', processo)
 			.then(p => p.textContent || '')
 			.then(txt => txt.replace(/[^0-9]/g, ''))
 			.then(value => {
@@ -615,8 +617,8 @@ class Bacen {
 		if (modo == 'preencher') {
 			const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
 			await Promise.all([
-				queryEither<HTMLSelectElement>('select[name="idTipoAcao"]'),
-				queryEither('CodClasse', processo).then(elt => elt.textContent || ''),
+				queryValidation<HTMLSelectElement>('select[name="idTipoAcao"]'),
+				queryValidation('CodClasse', processo).then(elt => elt.textContent || ''),
 			]).then(([tipoAcao, codClasse]) => {
 				if (tipoAcaoPorCodClasse.has(codClasse)) {
 					tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse) as string;
@@ -624,7 +626,7 @@ class Bacen {
 			});
 			await Promise.all([
 				queryInputByName('valorUnico'),
-				queryEither('ValCausa', processo)
+				queryValidation('ValCausa', processo)
 					.then(elt => elt.textContent || '')
 					.then(Number)
 					.then(
@@ -648,22 +650,22 @@ class Bacen {
 			}
 			await Promise.all(
 				queryAll('Partes Parte', processo).map(async parte => {
-					if ((await getText(queryEither('Autor', parte), 'N')) === 'S') {
+					if ((await getText(queryValidation('Autor', parte), 'N')) === 'S') {
 						(await queryInputByName('nomeAutor')).value = await getText(
-							queryEither('Nome', parte),
+							queryValidation('Nome', parte),
 							''
 						);
 						(await queryInputByName('cpfCnpjAutor')).value = await getText(
-							queryEither('CPF_CGC', parte),
+							queryValidation('CPF_CGC', parte),
 							''
 						);
 					} else if (
 						(await getText(
-							queryEither('Réu', parte).catch(() => queryEither('Reu', parte)),
+							queryValidation('Réu', parte).catch(() => queryValidation('Reu', parte)),
 							'N'
 						)) === 'S'
 					) {
-						reus.push(await getText(queryEither('CPF_CGC', parte), ''));
+						reus.push(await getText(queryValidation('CPF_CGC', parte), ''));
 					}
 				})
 			);
@@ -672,7 +674,7 @@ class Bacen {
 			if (this.submit) {
 				Promise.all([
 					queryInputByName('numeroProcesso'),
-					queryEither<HTMLFormElement>('form'),
+					queryValidation<HTMLFormElement>('form'),
 				]).then(([processo, form]) => {
 					processo.select();
 					processo.focus();
@@ -697,8 +699,8 @@ class Bacen {
 		if (this.reus.length) {
 			const documento = this.reus.shift() as string;
 			Promise.all([
-				queryEither<HTMLInputElement>('#cpfCnpj'),
-				queryEither<HTMLInputElement>('#botaoIncluirCpfCnpj'),
+				queryValidation<HTMLInputElement>('#cpfCnpj'),
+				queryValidation<HTMLInputElement>('#botaoIncluirCpfCnpj'),
 			]).then(([cpf, botao]) => {
 				cpf.value = documento;
 				botao.disabled = false;
@@ -706,7 +708,7 @@ class Bacen {
 				botao.click();
 			});
 		} else {
-			queryEither<HTMLSelectElement>('select[name="idTipoAcao"]')
+			queryValidation<HTMLSelectElement>('select[name="idTipoAcao"]')
 				.then(input => (input.value === '' ? Promise.resolve(input) : Promise.reject()))
 				.then(input => {
 					input.focus();
@@ -764,11 +766,44 @@ class Either<L, R> {
 		return Right(value);
 	}
 }
+function whenDocumentInteractive(): Promise<void> {
+	return new Promise(res => {
+		if (document.readyState === 'loading') {
+			document.addEventListener('readystatechange', onReadyStateChange);
+		} else {
+			res();
+		}
+		function onReadyStateChange() {
+			if (document.readyState !== 'loading') {
+				document.removeEventListener('readystatechange', onReadyStateChange);
+				res();
+			}
+		}
+	});
+}
+
 function Left<L, R = never>(leftValue: L, _rightValue?: R): Either<L, R> {
 	return new Either((L, _) => L(leftValue));
 }
 function Right<R, L = never>(rightValue: R, _leftValue?: L): Either<L, R> {
 	return new Either((_, R) => R(rightValue));
+}
+
+class IO<A> {
+	constructor(readonly unsafePerformIO: () => A) {}
+	ap<B>(that: IO<(_: A) => B>): IO<B> {
+		return new IO(() => that.unsafePerformIO()(this.unsafePerformIO()));
+	}
+	chain<B>(f: (_: A) => IO<B>): IO<B> {
+		return new IO(() => f(this.unsafePerformIO()).unsafePerformIO());
+	}
+	map<B>(f: (_: A) => B): IO<B> {
+		return new IO(() => f(this.unsafePerformIO()));
+	}
+
+	static of<A>(value: A): IO<A> {
+		return new IO(() => value);
+	}
 }
 
 const enum KeyCode {
@@ -917,103 +952,50 @@ class QueryError extends Error {
 	}
 }
 
-// Funções
+class Validation<A> {
+	constructor(readonly fold: <B>(Failure: (_: string[]) => B, Success: (_: A) => B) => B) {}
+	ap<B>(that: Validation<(_: A) => B>): Validation<B> {
+		return that.fold(
+			thoseErrors =>
+				Failure(this.fold(theseErrors => thoseErrors.concat(theseErrors), () => thoseErrors)),
+			f => this.map(f)
+		);
+	}
+	chain<B>(f: (_: A) => Validation<B>): Validation<B> {
+		return this.fold(Failure, f);
+	}
+	map<B>(f: (_: A) => B): Validation<B> {
+		return this.fold(Failure, x => Success(f(x)));
+	}
 
-function allEithers<L, A>(eithers: [Either<L, A>]): Either<L[], A[]>;
-function allEithers<L, A, B>(eithers: [Either<L, A>, Either<L, B>]): Either<L[], [A, B]>;
-function allEithers<L, A, B, C>(
-	eithers: [Either<L, A>, Either<L, B>, Either<L, C>]
-): Either<L[], [A, B, C]>;
-function allEithers<L, A, B, C, D>(
-	eithers: [Either<L, A>, Either<L, B>, Either<L, C>, Either<L, D>]
-): Either<L[], [A, B, C, D]>;
-function allEithers<L, A, B, C, D, E>(
-	eithers: [Either<L, A>, Either<L, B>, Either<L, C>, Either<L, D>, Either<L, E>]
-): Either<L[], [A, B, C, D, E]>;
-function allEithers<L, A, B, C, D, E, F>(
-	eithers: [Either<L, A>, Either<L, B>, Either<L, C>, Either<L, D>, Either<L, E>, Either<L, F>]
-): Either<L[], [A, B, C, D, E, F]>;
-function allEithers<L, A, B, C, D, E, F, G>(
-	eithers: [
-		Either<L, A>,
-		Either<L, B>,
-		Either<L, C>,
-		Either<L, D>,
-		Either<L, E>,
-		Either<L, F>,
-		Either<L, G>
-	]
-): Either<L[], [A, B, C, D, E, F, G]>;
-function allEithers<L, A, B, C, D, E, F, G, H>(
-	eithers: [
-		Either<L, A>,
-		Either<L, B>,
-		Either<L, C>,
-		Either<L, D>,
-		Either<L, E>,
-		Either<L, F>,
-		Either<L, G>,
-		Either<L, H>
-	]
-): Either<L[], [A, B, C, D, E, F, G, H]>;
-function allEithers<L, A, B, C, D, E, F, G, H, I>(
-	eithers: [
-		Either<L, A>,
-		Either<L, B>,
-		Either<L, C>,
-		Either<L, D>,
-		Either<L, E>,
-		Either<L, F>,
-		Either<L, G>,
-		Either<L, H>,
-		Either<L, I>
-	]
-): Either<L[], [A, B, C, D, E, F, G, H, I]>;
-function allEithers<L, A, B, C, D, E, F, G, H, I, J>(
-	eithers: [
-		Either<L, A>,
-		Either<L, B>,
-		Either<L, C>,
-		Either<L, D>,
-		Either<L, E>,
-		Either<L, F>,
-		Either<L, G>,
-		Either<L, H>,
-		Either<L, I>,
-		Either<L, J>
-	]
-): Either<L[], [A, B, C, D, E, F, G, H, I, J]>;
-function allEithers<L, A, B, C, D, E, F, G, H, I, J, K>(
-	eithers: [
-		Either<L, A>,
-		Either<L, B>,
-		Either<L, C>,
-		Either<L, D>,
-		Either<L, E>,
-		Either<L, F>,
-		Either<L, G>,
-		Either<L, H>,
-		Either<L, I>,
-		Either<L, J>,
-		Either<L, K>
-	]
-): Either<L[], [A, B, C, D, E, F, G, H, I, J, K]>;
-function allEithers<L, A>(eithers: Either<L, A>[]): Either<L[], A[]> {
-	const result = eithers.partitionMap(x => x);
-	return result.left.length > 0 ? Left(result.left) : Right(result.right);
+	static fail<A = never>(error: string): Validation<A> {
+		return Failure([error]);
+	}
+	static of<A>(value: A): Validation<A> {
+		return Success(value);
+	}
 }
+function Failure<A = never>(errors: string[]): Validation<A> {
+	return new Validation((F, _) => F(errors));
+}
+function Success<A>(value: A): Validation<A> {
+	return new Validation((_, S) => S(value));
+}
+
+// Funções
 
 function analisarPagina(preferencias: PreferenciasObject) {
 	const url = new URL(location.href);
 	const pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
-	if (Paginas.has(pagina)) {
-		const result = (Paginas.get(pagina) as (
-			preferencias: PreferenciasObject,
-			pagina: string
-		) => Resultado)(preferencias, pagina);
-		result.mapLeft(errors => {
-			errors.forEach(error => console.error(error));
-		});
+	const acao = Paginas.get(pagina);
+	if (acao) {
+		const result = acao(preferencias, pagina);
+		result.fold(
+			errors => {
+				console.log('Erro(s) encontrado(s):', errors);
+			},
+			() => {}
+		);
 	} else {
 		console.log('Página desconhecida:', pagina);
 	}
@@ -1085,32 +1067,40 @@ async function carregarPreferencias(): Promise<PreferenciasObject> {
 }
 
 function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
-	return allEithers([queryEither<HTMLFormElement>('form'), queryEither('#cpfCnpj')])
-		.chain(([form, cpfCnpj]) => {
-			const elts = form.elements;
-			return allEithers([
-				Right(form),
-				queryCampo('cdOperadorJuiz'),
-				queryCampo('idVara'),
-				queryCampo('codigoVara'),
-				queryCampo('processo'),
-				queryCampo<HTMLSelectElement>('idTipoAcao'),
-				queryCampo('nomeAutor'),
-				queryCampo('cpfCnpjAutor'),
-				Right(cpfCnpj),
-				queryCampo<HTMLSelectElement>('reus'),
-				queryCampo('valorUnico')
-					.map(Just)
-					.chainLeft(() => Right(Nothing)),
-			]);
+	return liftA2(
+		queryValidation<HTMLFormElement>('form'),
+		queryValidation('#cpfCnpj'),
+		(form, cpfCnpj) => {
+			const queryCampo = queryCampoFactory(form.elements);
 
-			function queryCampo<T extends Element = HTMLInputElement>(nome: string): Either<string, T> {
-				const elt = elts.namedItem(nome) as T | null;
-				return elt === null ? Left(`Campo não encontrado: "${nome}".`) : Right(elt);
-			}
-		})
+			return liftA3(
+				liftA4(
+					Success(form),
+					queryCampo('cdOperadorJuiz'),
+					queryCampo('idVara'),
+					queryCampo('codigoVara'),
+					(form, juiz, idVara, vara) => ({ form, juiz, idVara, vara })
+				),
+				liftA4(
+					queryCampo('processo'),
+					queryCampo<HTMLSelectElement>('idTipoAcao'),
+					queryCampo('nomeAutor'),
+					queryCampo('cpfCnpjAutor'),
+					(processo, tipo, nomeAutor, docAutor) => ({ processo, tipo, nomeAutor, docAutor })
+				),
+				liftA3(
+					Success(cpfCnpj),
+					queryCampo<HTMLSelectElement>('reus'),
+					Success(queryCampo('valorUnico').fold(() => Nothing, Just)),
+					(docReu, reus, maybeValor) => ({ docReu, reus, maybeValor })
+				),
+				(a, b, c) => Object.assign({}, a, b, c)
+			);
+		}
+	)
+		.chain(x => x)
 		.map(
-			([
+			({
 				form,
 				juiz,
 				idVara,
@@ -1122,104 +1112,112 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
 				docReu,
 				reus,
 				maybeValor,
-			]) => {
-				[juiz, vara, processo, tipo, nomeAutor].forEach(campo => {
-					campo.required = true;
-				});
-				maybeValor.ifJust(valor => {
-					valor.required = true;
-				});
+			}) => {
+				campoRequerido(juiz);
+				campoRequerido(vara);
+				campoRequerido(processo);
+				campoRequerido(tipo);
+				campoRequerido(nomeAutor);
+				maybeValor.ifJust(campoRequerido);
 				idVara.addEventListener('change', onIdVaraChange);
 				if (idVara.value) onIdVaraChange();
+				observarPreferencia(juiz, Preferencias.JUIZ);
+				observarPreferencia(vara, Preferencias.VARA);
+				const template = document.createElement('template');
+				template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;" hidden>Aguarde, carregando...</div>`;
+				const div = document.importNode(template.content, true).firstChild as HTMLDivElement;
+				document.body.appendChild(div);
+				processo.addEventListener('change', () => {
+					div.style.display = 'grid';
+
+					new Promise(res => {
+						setTimeout(res, 1000);
+					}).then(() => {
+						div.style.display = 'none';
+					});
+				});
+
 				function onIdVaraChange() {
 					vara.value = idVara.value;
 				}
-				preferencias.observar(Preferencias.JUIZ, maybe =>
-					maybe.ifJust(value => {
-						if (juiz.value === '') juiz.value = value;
-					})
-				);
-				preferencias.observar(Preferencias.VARA, maybe =>
-					maybe.ifJust(value => {
-						if (vara.value === '') vara.value = value;
-					})
-				);
 			}
 		);
+
+	function observarPreferencia(input: HTMLInputElement, preferencia: Preferencias) {
+		preferencias.observar(preferencia, maybe => {
+			maybe.ifJust(value => {
+				if (input.value === '') {
+					input.value = value;
+				}
+			});
+		});
+	}
+
+	function campoRequerido(campo: HTMLInputElement | HTMLSelectElement): void {
+		campo.required = true;
+	}
 }
 
-function dologin(preferencias: PreferenciasObject) {
-	return queryEither<HTMLFormElement>('form')
-		.mapLeft(err => [err])
-		.chain(form => {
-			const collection = form.elements;
-			return allEithers([
-				Right(form),
-				queryCampo('unidade'),
-				queryCampo('operador'),
-				queryCampo('senha'),
-				queryCampo<RadioNodeList>('opcao_login'),
-			]);
+function dologin(preferencias: PreferenciasObject): Validation<void> {
+	return queryValidation<HTMLFormElement>('form').chain(form => {
+		const queryCampo = queryCampoFactory(form.elements);
 
-			function queryCampo<T extends Element | RadioNodeList = HTMLInputElement>(
-				name: string
-			): Either<string, T> {
-				const elt = collection.namedItem(name) as T | null;
-				return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
-			}
-		})
-		.map(([form, unidade, operador, senha, opcoesLogin]) => {
-			preferencias.observar(Preferencias.UNIDADE, maybe => {
-				unidade.setAttribute('placeholder', maybe.getOrElse(''));
-			});
-			preferencias.observar(Preferencias.OPERADOR, maybe => {
-				operador.setAttribute('placeholder', maybe.getOrElse(''));
-			});
-			opcoesLogin.forEach(opcao => {
-				opcao.addEventListener('click', focarCampoVazio);
-			});
-			window.addEventListener('load', focarCampoVazio);
-			form.addEventListener('submit', () => {
-				if (unidade.value === '') {
-					unidade.value = preferencias.get(Preferencias.UNIDADE).getOrElse('');
-				}
-				if (operador.value === '') {
-					operador.value = preferencias.get(Preferencias.OPERADOR).getOrElse('');
-				}
-			});
+		const vUnidade = queryCampo('unidade');
+		const vOperador = queryCampo('operador');
+		const vSenha = queryCampo('senha');
+		const vOpcoesLogin = queryCampo<RadioNodeList>('opcao_login');
 
-			class Campo {
-				constructor(
-					readonly input: HTMLInputElement,
-					readonly preferencia?: Preferencias,
-					readonly next?: Campo
-				) {}
-				concat(that: Campo): Campo {
-					return new Campo(this.input, this.preferencia, this.next ? this.next.concat(that) : that);
+		return liftA4(
+			vUnidade,
+			vOperador,
+			vSenha,
+			vOpcoesLogin,
+			(unidade, operador, senha, opcoesLogin) => {
+				const observarPreferencia = observarPreferenciaFactory(preferencias);
+
+				observarPreferencia(unidade, Preferencias.UNIDADE);
+				observarPreferencia(operador, Preferencias.OPERADOR);
+				form.addEventListener('submit', () => {
+					preencherSeVazio(unidade, Preferencias.UNIDADE);
+					preencherSeVazio(operador, Preferencias.OPERADOR);
+				});
+				opcoesLogin.forEach(opcao => {
+					opcao.addEventListener('click', verificarFoco);
+				});
+				window.addEventListener('load', verificarFoco);
+
+				function focarCampoSemPreferencia() {
+					focarSePreferenciaVazia(unidade, Preferencias.UNIDADE, () =>
+						focarSePreferenciaVazia(operador, Preferencias.OPERADOR, () => {
+							senha.focus();
+						})
+					);
 				}
-				focar() {
-					Maybe.fromNullable(this.preferencia)
-						.chain(preferencias.get)
-						.mapNullable(() => this.next)
-						.map(next => next.focar())
-						.getOrElseL(() => {
-							this.input.focus();
-						});
+
+				function verificarFoco() {
+					if (opcoesLogin.value === 'operador') {
+						setTimeout(focarCampoSemPreferencia, 100);
+					}
 				}
 			}
+		);
+	});
 
-			const camposAFocar = new Campo(unidade, Preferencias.UNIDADE)
-				.concat(new Campo(operador, Preferencias.OPERADOR))
-				.concat(new Campo(senha));
+	function focarSePreferenciaVazia(
+		input: HTMLInputElement,
+		preferencia: Preferencias,
+		senao: () => void
+	): void {
+		preferencias.get(preferencia).fold(() => {
+			input.focus();
+		}, senao);
+	}
 
-			function focarCampoVazio() {
-				if (opcoesLogin.value === 'operador') {
-					setTimeout(() => {
-						camposAFocar.focar();
-					}, 100);
-				}
-			}
-		});
+	function preencherSeVazio(input: HTMLInputElement, preferencia: Preferencias): void {
+		if (input.value === '') {
+			input.value = preferencias.get(preferencia).getOrElse('');
+		}
+	}
 }
 
 function formatNumber(num: number) {
@@ -1232,9 +1230,62 @@ function formatNumber(num: number) {
 }
 
 function liftA2<L, A, B, C>(ex: Either<L, A>, ey: Either<L, B>, f: (x: A, y: B) => C): Either<L, C>;
+function liftA2<A, B, C>(vx: Validation<A>, vy: Validation<B>, f: (x: A, y: B) => C): Validation<C>;
 function liftA2<A, B, C>(mx: Maybe<A>, my: Maybe<B>, f: (x: A, y: B) => C): Maybe<C>;
 function liftA2<A, B, C>(ax: Apply<A>, ay: Apply<B>, f: (x: A, y: B) => C): Apply<C> {
 	return ay.ap(ax.map((x: A) => (y: B) => f(x, y)));
+}
+
+function liftA3<L, A, B, C, D>(
+	ex: Either<L, A>,
+	ey: Either<L, B>,
+	ez: Either<L, C>,
+	f: (x: A, y: B, z: C) => D
+): Either<L, D>;
+function liftA3<A, B, C, D>(
+	vx: Validation<A>,
+	vy: Validation<B>,
+	vz: Validation<C>,
+	f: (x: A, y: B, z: C) => D
+): Validation<D>;
+function liftA3<A, B, C, D>(
+	mx: Maybe<A>,
+	my: Maybe<B>,
+	mz: Maybe<C>,
+	f: (x: A, y: B, z: C) => D
+): Maybe<D>;
+function liftA3<A, B, C, D>(
+	ax: Apply<A>,
+	ay: Apply<B>,
+	az: Apply<C>,
+	f: (x: A, y: B, z: C) => D
+): Apply<D> {
+	return az.ap(ay.ap(ax.map((x: A) => (y: B) => (z: C) => f(x, y, z))));
+}
+
+function liftA4<A, B, C, D, E>(
+	vw: Validation<A>,
+	vx: Validation<B>,
+	vy: Validation<C>,
+	vz: Validation<D>,
+	f: (w: A, x: B, y: C, z: D) => E
+): Validation<E>;
+function liftA4<A, B, C, D, E>(
+	aw: Apply<A>,
+	ax: Apply<B>,
+	ay: Apply<C>,
+	az: Apply<D>,
+	f: (w: A, x: B, y: C, z: D) => E
+): Apply<E> {
+	return az.ap(ay.ap(ax.ap(aw.map((w: A) => (x: B) => (y: C) => (z: D) => f(w, x, y, z)))));
+}
+
+function observarPreferenciaFactory(preferencias: PreferenciasObject) {
+	return function observarPreferencia(input: HTMLInputElement, preferencia: Preferencias): void {
+		preferencias.observar(preferencia, maybe => {
+			input.setAttribute('placeholder', maybe.getOrElse(''));
+		});
+	};
 }
 
 function padLeft(size: number, number: number): string {
@@ -1245,16 +1296,18 @@ function padLeft(size: number, number: number): string {
 	return result;
 }
 
-function queryEither<T extends Element>(
-	selector: string,
-	context: NodeSelector = document
-): Either<string, T> {
-	const elt = context.querySelector<T>(selector);
-	return elt === null ? Left(`Elemento não encontrado: '${selector}'.`) : Right(elt);
-}
-
 function queryAll<T extends Element>(selector: string, context: NodeSelector = document): T[] {
 	return Array.from(context.querySelectorAll<T>(selector));
+}
+
+function queryCampoFactory(collection: HTMLFormControlsCollection) {
+	return function queryCampo<T extends Element | RadioNodeList = HTMLInputElement>(
+		nome: string
+	): Validation<T> {
+		const elt = collection.namedItem(nome) as T | null;
+		if (elt === null) return Validation.fail(`Campo não encontrado: "${nome}".`);
+		return Success(elt);
+	};
 }
 
 function queryMaybe<T extends Element>(
@@ -1264,17 +1317,19 @@ function queryMaybe<T extends Element>(
 	return Maybe.fromNullable(context.querySelector<T>(selector));
 }
 
-function queryInputByName(
-	name: string,
+function queryValidation<T extends Element>(
+	selector: string,
 	context: NodeSelector = document
-): Either<string, HTMLInputElement> {
-	const elt = context.querySelector<HTMLInputElement>(`input[name="${name}"]`);
-	return elt === null ? Left(`Campo não encontrado: "${name}".`) : Right(elt);
+): Validation<T> {
+	const elt = context.querySelector<T>(selector);
+	return elt === null
+		? Validation.fail(`Elemento não encontrado: '${selector}'.`)
+		: Validation.of(elt);
 }
 
 // Constantes
 
-type Resultado = Either<string[], void>;
+type Resultado = Validation<void>;
 const Paginas = new Map<string, (preferencias: PreferenciasObject, pagina: string) => Resultado>([
 	['dologin', dologin],
 	['conferirDadosMinutaBVInclusao', criarMinutaBVInclusao],
