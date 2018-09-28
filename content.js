@@ -77,10 +77,7 @@ class Bacen {
         return this.consultarReu();
     }
     consultarSolicitacoesProtocoladas(nomeInput, tipo) {
-        return Promise.all([
-            queryInputByName(nomeInput),
-            queryValidation('input.botao'),
-        ]).then(([input, botao]) => {
+        return Promise.all([queryInputByName(nomeInput), query('input.botao')]).then(([input, botao]) => {
             input.focus();
             input.addEventListener('change', () => tipo === 'processo'
                 ? this.onConsultaProcessoChange(input)
@@ -302,7 +299,7 @@ class Bacen {
     incluirMinuta(tipoMinuta) {
         const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
         const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
-        return queryValidation(selector)
+        return query(selector)
             .then(cell => cell.textContent || '')
             .then(txt => txt.split(/\n/))
             .then(xs => (xs.length > 2 ? Promise.resolve(xs) : Promise.reject()))
@@ -339,7 +336,7 @@ class Bacen {
         if (this.submit && this.valid && !this.buscando) {
             Promise.all([
                 queryInputByName('numeroProcesso').catch((err1) => queryInputByName('numeroProtocolo').catch((err2) => Promise.reject(new Error([err1, err2].map(x => x.message).join('\n'))))),
-                queryValidation('form'),
+                query('form'),
             ])
                 .then(([input, form]) => {
                 input.select();
@@ -414,12 +411,12 @@ class Bacen {
             codigoVara.setAttribute('value', codigoVara.value);
         })
             .catch(() => { });
-        await queryValidation('form')
+        await query('form')
             .then(form => {
             form.reset();
         })
             .catch(() => { });
-        await queryValidation('select[name="reus"]').then(select => {
+        await query('select[name="reus"]').then(select => {
             const reus = Array.from(select.options);
             if (reus.length) {
                 reus.forEach(reu => (reu.selected = true));
@@ -471,15 +468,12 @@ class Bacen {
         e.preventDefault();
         e.stopPropagation();
         if (input.name === 'processo') {
-            queryValidation('select[name="idTipoAcao"]').then(idTipoAcao => {
+            query('select[name="idTipoAcao"]').then(idTipoAcao => {
                 idTipoAcao.focus();
             });
         }
         else if (['numeroProcesso', 'numeroProtocolo'].includes(input.name)) {
-            Promise.all([
-                queryValidation('input.botao'),
-                queryValidation('form'),
-            ]).then(([botao, form]) => {
+            Promise.all([query('input.botao'), query('form')]).then(([botao, form]) => {
                 this.submit = e.keyCode == 13 /* ENTER */;
                 botao.focus();
                 if (this.submit && this.valid && !this.buscando) {
@@ -498,12 +492,12 @@ class Bacen {
     async pesquisarPorProcesso() {
         await this.tratarErros();
         return Promise.all([
-            queryValidation('.pagebanner')
+            query('.pagebanner')
                 .then(p => (p.textContent || '').match(/^\d+/))
                 .then(x => (x === null ? Promise.reject() : Promise.resolve(x)))
                 .then(xs => Number(xs[0]))
                 .catch(() => Promise.reject(new Error('Elemento ".pagebanner" não possui conteúdo numérico.'))),
-            queryValidation('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(cell => queryValidation('a', cell)),
+            query('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(cell => query('a', cell)),
         ]).then(([registros, link]) => {
             if (registros === 1) {
                 location.href = link.href;
@@ -524,7 +518,7 @@ class Bacen {
         const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
         const processo = await Promise.resolve(text)
             .then(txt => parser.parseFromString(txt, 'text/xml'))
-            .then(doc => queryValidation('return', doc))
+            .then(doc => query('return', doc))
             .then(ret => ret.textContent || '')
             .then(ret => parser.parseFromString(ret, 'text/xml'));
         const campoProcesso = await queryInputByName(el);
@@ -543,7 +537,7 @@ class Bacen {
         }
         this.valid = true;
         this.buscando = false;
-        await queryValidation('Processo Processo', processo)
+        await query('Processo Processo', processo)
             .then(p => p.textContent || '')
             .then(txt => txt.replace(/[^0-9]/g, ''))
             .then(value => {
@@ -552,8 +546,8 @@ class Bacen {
         if (modo == 'preencher') {
             const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
             await Promise.all([
-                queryValidation('select[name="idTipoAcao"]'),
-                queryValidation('CodClasse', processo).then(elt => elt.textContent || ''),
+                query('select[name="idTipoAcao"]'),
+                query('CodClasse', processo).then(elt => elt.textContent || ''),
             ]).then(([tipoAcao, codClasse]) => {
                 if (tipoAcaoPorCodClasse.has(codClasse)) {
                     tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse);
@@ -561,7 +555,7 @@ class Bacen {
             });
             await Promise.all([
                 queryInputByName('valorUnico'),
-                queryValidation('ValCausa', processo)
+                query('ValCausa', processo)
                     .then(elt => elt.textContent || '')
                     .then(Number)
                     .then(x => isNaN(x) || x === 0
@@ -581,22 +575,19 @@ class Bacen {
                     .catch(() => defaultValue);
             }
             await Promise.all(queryAll('Partes Parte', processo).map(async (parte) => {
-                if ((await getText(queryValidation('Autor', parte), 'N')) === 'S') {
-                    (await queryInputByName('nomeAutor')).value = await getText(queryValidation('Nome', parte), '');
-                    (await queryInputByName('cpfCnpjAutor')).value = await getText(queryValidation('CPF_CGC', parte), '');
+                if ((await getText(query('Autor', parte), 'N')) === 'S') {
+                    (await queryInputByName('nomeAutor')).value = await getText(query('Nome', parte), '');
+                    (await queryInputByName('cpfCnpjAutor')).value = await getText(query('CPF_CGC', parte), '');
                 }
-                else if ((await getText(queryValidation('Réu', parte).catch(() => queryValidation('Reu', parte)), 'N')) === 'S') {
-                    reus.push(await getText(queryValidation('CPF_CGC', parte), ''));
+                else if ((await getText(query('Réu', parte).catch(() => query('Reu', parte)), 'N')) === 'S') {
+                    reus.push(await getText(query('CPF_CGC', parte), ''));
                 }
             }));
             this.processaLista(reus);
         }
         else if (modo == 'consulta') {
             if (this.submit) {
-                Promise.all([
-                    queryInputByName('numeroProcesso'),
-                    queryValidation('form'),
-                ]).then(([processo, form]) => {
+                Promise.all([queryInputByName('numeroProcesso'), query('form')]).then(([processo, form]) => {
                     processo.select();
                     processo.focus();
                     form.submit();
@@ -619,8 +610,8 @@ class Bacen {
         if (this.reus.length) {
             const documento = this.reus.shift();
             Promise.all([
-                queryValidation('#cpfCnpj'),
-                queryValidation('#botaoIncluirCpfCnpj'),
+                query('#cpfCnpj'),
+                query('#botaoIncluirCpfCnpj'),
             ]).then(([cpf, botao]) => {
                 cpf.value = documento;
                 botao.disabled = false;
@@ -629,7 +620,7 @@ class Bacen {
             });
         }
         else {
-            queryValidation('select[name="idTipoAcao"]')
+            query('select[name="idTipoAcao"]')
                 .then(input => (input.value === '' ? Promise.resolve(input) : Promise.reject()))
                 .then(input => {
                 input.focus();
@@ -682,22 +673,6 @@ class Either {
     static of(value) {
         return Right(value);
     }
-}
-function whenDocumentInteractive() {
-    return new Promise(res => {
-        if (document.readyState === 'loading') {
-            document.addEventListener('readystatechange', onReadyStateChange);
-        }
-        else {
-            res();
-        }
-        function onReadyStateChange() {
-            if (document.readyState !== 'loading') {
-                document.removeEventListener('readystatechange', onReadyStateChange);
-                res();
-            }
-        }
-    });
 }
 function Left(leftValue, _rightValue) {
     return new Either((L, _) => L(leftValue));
@@ -937,11 +912,31 @@ async function carregarPreferencias() {
         },
     };
 }
+function conferirDadosMinutaBVInclusao(preferencias) {
+    return queryErros().fold(() => criarMinutaBVInclusao(preferencias), () => query('form')
+        .chain(form => sequenceAO(Validation, {
+        senhaJuiz: queryInput('senhaJuiz', form),
+        btnIncluir: queryInput('btnIncluir', form),
+    }))
+        .map(({ senhaJuiz, btnIncluir }) => {
+        if (!senhaJuiz.disabled) {
+            senhaJuiz.focus();
+        }
+        else {
+            window.addEventListener('keypress', e => {
+                if (e.keyCode !== 13 /* ENTER */)
+                    return;
+                e.preventDefault();
+                btnIncluir.click();
+            });
+        }
+    }));
+}
 function criarMinutaBVInclusao(preferencias) {
-    return queryValidation('form')
+    return query('form')
         .chain(form => {
-        const qI = (name) => queryInput(name)(form);
-        const qS = (name) => querySelect(name)(form);
+        const qI = (name) => queryInput(name, form);
+        const qS = (name) => querySelect(name, form);
         return sequenceAO(Validation, {
             form: Success(form),
             juiz: qI('cdOperadorJuiz'),
@@ -951,7 +946,7 @@ function criarMinutaBVInclusao(preferencias) {
             tipo: qS('idTipoAcao'),
             nomeAutor: qI('nomeAutor'),
             docAutor: qI('cpfCnpjAutor'),
-            docReu: queryValidation('#cpfCnpj'),
+            docReu: query('#cpfCnpj'),
             reus: qS('reus'),
             maybeValor: Success(qI('valorUnico').toMaybe()),
         });
@@ -992,13 +987,13 @@ function criarMinutaBVInclusao(preferencias) {
     }
 }
 function dologin(preferencias) {
-    return queryValidation('form')
+    return query('form')
         .chain(form => sequenceAO(Validation, {
         form: Success(form),
-        unidade: queryInput('unidade')(form),
-        operador: queryInput('operador')(form),
-        senha: queryInput('senha')(form),
-        opcoesLogin: queryCampo('opcao_login')(form),
+        unidade: queryInput('unidade', form),
+        operador: queryInput('operador', form),
+        senha: queryInput('senha', form),
+        opcoesLogin: queryRadio('opcao_login', form),
     }))
         .map(({ form, unidade, operador, senha, opcoesLogin }) => {
         observarPreferencia(unidade, "unidade" /* UNIDADE */);
@@ -1068,28 +1063,28 @@ function padLeft(size, number) {
 function queryAll(selector, context = document) {
     return Array.from(context.querySelectorAll(selector));
 }
-function queryCampo(nome) {
-    return form => new Validation((Failure, Success) => {
+function queryCampo(nome, form) {
+    return new Validation((Failure, Success) => {
         const elt = form.elements.namedItem(nome);
         return elt === null ? Failure([`Campo não encontrado: "${nome}".`]) : Success(elt);
     });
 }
-function queryInput(name) {
-    return form => new Validation((Failure, Success) => {
-        const elt = form.querySelector(`input[name="${name}"]`);
-        return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
-    });
+function queryRadio(nome, form) {
+    return queryCampo(nome, form);
 }
-function querySelect(name) {
-    return form => new Validation((Failure, Success) => {
-        const elt = form.querySelector(`select[name="${name}"]`);
-        return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
-    });
+function queryInput(nome, form) {
+    return queryCampo(nome, form);
+}
+function querySelect(nome, form) {
+    return queryCampo(nome, form);
 }
 function queryMaybe(selector, context = document) {
-    return Maybe.fromNullable(context.querySelector(selector));
+    return new Maybe((Nothing, Just) => {
+        const elt = context.querySelector(selector);
+        return elt === null ? Nothing() : Just(elt);
+    });
 }
-function queryValidation(selector, context = document) {
+function query(selector, context = document) {
     return new Validation((Failure, Success) => {
         const elt = context.querySelector(selector);
         return elt === null ? Failure([`Elemento não encontrado: '${selector}'.`]) : Success(elt);
@@ -1098,10 +1093,41 @@ function queryValidation(selector, context = document) {
 function sequenceAO(A, obj) {
     return Object.keys(obj).reduce((result, key) => obj[key].ap(result.map((dest) => (source) => Object.assign(dest, { [key]: source }))), A.of({}));
 }
+function queryErros() {
+    return new Validation((Failure, Success) => {
+        const erros = queryAll('.msgErro')
+            .map(erro => {
+            const elt = erro.cloneNode(true);
+            elt.innerHTML = elt.innerHTML
+                .replace(/\n?•(\&nbsp;)?/g, '')
+                .replace('<b>', '&ldquo;')
+                .replace('</b>', '&rdquo;');
+            return (elt.textContent || '').trim();
+        })
+            .filter(x => x !== '');
+        return erros.length > 0 ? Failure(erros) : Success(undefined);
+    });
+}
+function whenDocumentInteractive() {
+    return new Promise(res => {
+        if (document.readyState === 'loading') {
+            document.addEventListener('readystatechange', onReadyStateChange);
+        }
+        else {
+            res();
+        }
+        function onReadyStateChange() {
+            if (document.readyState !== 'loading') {
+                document.removeEventListener('readystatechange', onReadyStateChange);
+                res();
+            }
+        }
+    });
+}
 const Paginas = new Map([
     ['dologin', dologin],
-    ['conferirDadosMinutaBVInclusao', criarMinutaBVInclusao],
-    ['conferirDadosMinutaSIInclusao', criarMinutaBVInclusao],
+    ['conferirDadosMinutaBVInclusao', conferirDadosMinutaBVInclusao],
+    ['conferirDadosMinutaSIInclusao', conferirDadosMinutaBVInclusao],
     ['criarMinutaBVInclusao', criarMinutaBVInclusao],
     ['criarMinutaSIInclusao', criarMinutaBVInclusao],
 ]);

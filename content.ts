@@ -117,21 +117,20 @@ class Bacen {
 	}
 
 	consultarSolicitacoesProtocoladas(nomeInput: string, tipo: 'processo' | 'protocolo') {
-		return Promise.all([
-			queryInputByName(nomeInput),
-			queryValidation<HTMLInputElement>('input.botao'),
-		]).then(([input, botao]) => {
-			input.focus();
-			input.addEventListener(
-				'change',
-				() =>
-					tipo === 'processo'
-						? this.onConsultaProcessoChange(input)
-						: this.onConsultaProtocoloChange(input)
-			);
-			input.addEventListener('keypress', e => this.onProcessoKeypress(e, input));
-			botao.addEventListener('click', e => this.onBotaoClick(e));
-		});
+		return Promise.all([queryInputByName(nomeInput), query<HTMLInputElement>('input.botao')]).then(
+			([input, botao]) => {
+				input.focus();
+				input.addEventListener(
+					'change',
+					() =>
+						tipo === 'processo'
+							? this.onConsultaProcessoChange(input)
+							: this.onConsultaProtocoloChange(input)
+				);
+				input.addEventListener('keypress', e => this.onProcessoKeypress(e, input));
+				botao.addEventListener('click', e => this.onBotaoClick(e));
+			}
+		);
 	}
 
 	/**
@@ -365,7 +364,7 @@ class Bacen {
 	incluirMinuta(tipoMinuta: 'BV' | 'SI') {
 		const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
 		const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
-		return queryValidation<HTMLTableCellElement>(selector)
+		return query<HTMLTableCellElement>(selector)
 			.then(cell => cell.textContent || '')
 			.then(txt => txt.split(/\n/))
 			.then(xs => (xs.length > 2 ? Promise.resolve(xs) : Promise.reject()))
@@ -409,7 +408,7 @@ class Bacen {
 						Promise.reject(new Error([err1, err2].map(x => x.message).join('\n')))
 					)
 				),
-				queryValidation<HTMLFormElement>('form'),
+				query<HTMLFormElement>('form'),
 			])
 				.then(([input, form]) => {
 					input.select();
@@ -486,12 +485,12 @@ class Bacen {
 				codigoVara.setAttribute('value', codigoVara.value);
 			})
 			.catch(() => {});
-		await queryValidation<HTMLFormElement>('form')
+		await query<HTMLFormElement>('form')
 			.then(form => {
 				form.reset();
 			})
 			.catch(() => {});
-		await queryValidation<HTMLSelectElement>('select[name="reus"]').then(select => {
+		await query<HTMLSelectElement>('select[name="reus"]').then(select => {
 			const reus = Array.from(select.options);
 			if (reus.length) {
 				reus.forEach(reu => (reu.selected = true));
@@ -544,22 +543,21 @@ class Bacen {
 		e.preventDefault();
 		e.stopPropagation();
 		if (input.name === 'processo') {
-			queryValidation<HTMLSelectElement>('select[name="idTipoAcao"]').then(idTipoAcao => {
+			query<HTMLSelectElement>('select[name="idTipoAcao"]').then(idTipoAcao => {
 				idTipoAcao.focus();
 			});
 		} else if (['numeroProcesso', 'numeroProtocolo'].includes(input.name)) {
-			Promise.all([
-				queryValidation<HTMLInputElement>('input.botao'),
-				queryValidation<HTMLFormElement>('form'),
-			]).then(([botao, form]) => {
-				this.submit = e.keyCode == KeyCode.ENTER;
-				botao.focus();
-				if (this.submit && this.valid && !this.buscando) {
-					input.select();
-					input.focus();
-					form.submit();
+			Promise.all([query<HTMLInputElement>('input.botao'), query<HTMLFormElement>('form')]).then(
+				([botao, form]) => {
+					this.submit = e.keyCode == KeyCode.ENTER;
+					botao.focus();
+					if (this.submit && this.valid && !this.buscando) {
+						input.select();
+						input.focus();
+						form.submit();
+					}
 				}
-			});
+			);
 		}
 	}
 
@@ -571,16 +569,16 @@ class Bacen {
 	async pesquisarPorProcesso() {
 		await this.tratarErros();
 		return Promise.all([
-			queryValidation('.pagebanner')
+			query('.pagebanner')
 				.then(p => (p.textContent || '').match(/^\d+/))
 				.then(x => (x === null ? Promise.reject() : Promise.resolve(x)))
 				.then(xs => Number(xs[0]))
 				.catch(() =>
 					Promise.reject(new Error('Elemento ".pagebanner" não possui conteúdo numérico.'))
 				),
-			queryValidation<HTMLTableElement>(
-				'table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)'
-			).then(cell => queryValidation<HTMLAnchorElement>('a', cell)),
+			query<HTMLTableElement>('table#ordem > tbody > tr:nth-child(1) > td:nth-child(3)').then(
+				cell => query<HTMLAnchorElement>('a', cell)
+			),
 		]).then(([registros, link]) => {
 			if (registros === 1) {
 				location.href = link.href;
@@ -603,7 +601,7 @@ class Bacen {
 		const el = modo == 'preencher' ? 'processo' : 'numeroProcesso';
 		const processo = await Promise.resolve(text)
 			.then(txt => parser.parseFromString(txt, 'text/xml') as XMLDocument)
-			.then(doc => queryValidation('return', doc))
+			.then(doc => query('return', doc))
 			.then(ret => ret.textContent || '')
 			.then(ret => parser.parseFromString(ret, 'text/xml') as XMLDocument);
 
@@ -624,7 +622,7 @@ class Bacen {
 
 		this.valid = true;
 		this.buscando = false;
-		await queryValidation('Processo Processo', processo)
+		await query('Processo Processo', processo)
 			.then(p => p.textContent || '')
 			.then(txt => txt.replace(/[^0-9]/g, ''))
 			.then(value => {
@@ -633,8 +631,8 @@ class Bacen {
 		if (modo == 'preencher') {
 			const tipoAcaoPorCodClasse = new Map([['000229', '1'], ['000098', '1'], ['000099', '4']]);
 			await Promise.all([
-				queryValidation<HTMLSelectElement>('select[name="idTipoAcao"]'),
-				queryValidation('CodClasse', processo).then(elt => elt.textContent || ''),
+				query<HTMLSelectElement>('select[name="idTipoAcao"]'),
+				query('CodClasse', processo).then(elt => elt.textContent || ''),
 			]).then(([tipoAcao, codClasse]) => {
 				if (tipoAcaoPorCodClasse.has(codClasse)) {
 					tipoAcao.value = tipoAcaoPorCodClasse.get(codClasse) as string;
@@ -642,7 +640,7 @@ class Bacen {
 			});
 			await Promise.all([
 				queryInputByName('valorUnico'),
-				queryValidation('ValCausa', processo)
+				query('ValCausa', processo)
 					.then(elt => elt.textContent || '')
 					.then(Number)
 					.then(
@@ -666,36 +664,29 @@ class Bacen {
 			}
 			await Promise.all(
 				queryAll('Partes Parte', processo).map(async parte => {
-					if ((await getText(queryValidation('Autor', parte), 'N')) === 'S') {
-						(await queryInputByName('nomeAutor')).value = await getText(
-							queryValidation('Nome', parte),
-							''
-						);
+					if ((await getText(query('Autor', parte), 'N')) === 'S') {
+						(await queryInputByName('nomeAutor')).value = await getText(query('Nome', parte), '');
 						(await queryInputByName('cpfCnpjAutor')).value = await getText(
-							queryValidation('CPF_CGC', parte),
+							query('CPF_CGC', parte),
 							''
 						);
 					} else if (
-						(await getText(
-							queryValidation('Réu', parte).catch(() => queryValidation('Reu', parte)),
-							'N'
-						)) === 'S'
+						(await getText(query('Réu', parte).catch(() => query('Reu', parte)), 'N')) === 'S'
 					) {
-						reus.push(await getText(queryValidation('CPF_CGC', parte), ''));
+						reus.push(await getText(query('CPF_CGC', parte), ''));
 					}
 				})
 			);
 			this.processaLista(reus);
 		} else if (modo == 'consulta') {
 			if (this.submit) {
-				Promise.all([
-					queryInputByName('numeroProcesso'),
-					queryValidation<HTMLFormElement>('form'),
-				]).then(([processo, form]) => {
-					processo.select();
-					processo.focus();
-					form.submit();
-				});
+				Promise.all([queryInputByName('numeroProcesso'), query<HTMLFormElement>('form')]).then(
+					([processo, form]) => {
+						processo.select();
+						processo.focus();
+						form.submit();
+					}
+				);
 			}
 		}
 	}
@@ -715,8 +706,8 @@ class Bacen {
 		if (this.reus.length) {
 			const documento = this.reus.shift() as string;
 			Promise.all([
-				queryValidation<HTMLInputElement>('#cpfCnpj'),
-				queryValidation<HTMLInputElement>('#botaoIncluirCpfCnpj'),
+				query<HTMLInputElement>('#cpfCnpj'),
+				query<HTMLInputElement>('#botaoIncluirCpfCnpj'),
 			]).then(([cpf, botao]) => {
 				cpf.value = documento;
 				botao.disabled = false;
@@ -724,7 +715,7 @@ class Bacen {
 				botao.click();
 			});
 		} else {
-			queryValidation<HTMLSelectElement>('select[name="idTipoAcao"]')
+			query<HTMLSelectElement>('select[name="idTipoAcao"]')
 				.then(input => (input.value === '' ? Promise.resolve(input) : Promise.reject()))
 				.then(input => {
 					input.focus();
@@ -781,21 +772,6 @@ class Either<L, R> {
 	static of<R, L = never>(value: R): Either<L, R> {
 		return Right(value);
 	}
-}
-function whenDocumentInteractive(): Promise<void> {
-	return new Promise(res => {
-		if (document.readyState === 'loading') {
-			document.addEventListener('readystatechange', onReadyStateChange);
-		} else {
-			res();
-		}
-		function onReadyStateChange() {
-			if (document.readyState !== 'loading') {
-				document.removeEventListener('readystatechange', onReadyStateChange);
-				res();
-			}
-		}
-	});
 }
 
 function Left<L, R = never>(leftValue: L, _rightValue?: R): Either<L, R> {
@@ -1089,71 +1065,78 @@ async function carregarPreferencias(): Promise<PreferenciasObject> {
 	};
 }
 
-function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
-	return queryValidation<HTMLFormElement>('form')
-		.chain(form => {
-			const qI = (name: string) => queryInput(name)(form);
-			const qS = (name: string) => querySelect(name)(form);
-
-			return sequenceAO(Validation, {
-				form: Success(form),
-				juiz: qI('cdOperadorJuiz'),
-				idVara: qS('idVara'),
-				vara: qI('codigoVara'),
-				processo: qI('processo'),
-				tipo: qS('idTipoAcao'),
-				nomeAutor: qI('nomeAutor'),
-				docAutor: qI('cpfCnpjAutor'),
-				docReu: queryValidation('#cpfCnpj'),
-				reus: qS('reus'),
-				maybeValor: Success(qI('valorUnico').toMaybe()),
-			});
-		})
-		.map(
-			({
-				form,
-				juiz,
-				idVara,
-				vara,
-				processo,
-				tipo,
-				nomeAutor,
-				docAutor,
-				docReu,
-				reus,
-				maybeValor,
-			}) => {
-				[juiz, vara, processo, tipo, nomeAutor, ...maybeValor.fold(() => [], Array.of)].forEach(
-					campo => {
-						campo.required = true;
+function conferirDadosMinutaBVInclusao(preferencias: PreferenciasObject): Validation<void> {
+	return queryErros().fold(
+		() => criarMinutaBVInclusao(preferencias),
+		() =>
+			query<HTMLFormElement>('form')
+				.chain(form =>
+					sequenceAO(Validation, {
+						senhaJuiz: queryInput('senhaJuiz', form),
+						btnIncluir: queryInput('btnIncluir', form),
+					})
+				)
+				.map(({ senhaJuiz, btnIncluir }) => {
+					if (!senhaJuiz.disabled) {
+						senhaJuiz.focus();
+					} else {
+						window.addEventListener('keypress', e => {
+							if (e.keyCode !== KeyCode.ENTER) return;
+							e.preventDefault();
+							btnIncluir.click();
+						});
 					}
-				);
+				})
+	);
+}
 
-				idVara.addEventListener('change', sincronizar);
-				sincronizar();
-
-				observarPreferencia(juiz, Preferencias.JUIZ);
-				observarPreferencia(vara, Preferencias.VARA);
-
-				const template = document.createElement('template');
-				template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;" hidden>Aguarde, carregando...</div>`;
-				const div = document.importNode(template.content, true).firstChild as HTMLDivElement;
-				document.body.appendChild(div);
-				processo.addEventListener('change', () => {
-					div.style.display = 'grid';
-
-					new Promise(res => {
-						setTimeout(res, 1000);
-					}).then(() => {
-						div.style.display = 'none';
-					});
-				});
-
-				function sincronizar() {
-					if (idVara.value) vara.value = idVara.value;
+function criarMinutaBVInclusao(preferencias: PreferenciasObject): Validation<void> {
+	return query<HTMLFormElement>('form')
+		.chain(form =>
+			sequenceAO(Validation, {
+				form: Success(form),
+				juiz: queryInput('cdOperadorJuiz', form),
+				idVara: querySelect('idVara', form),
+				vara: queryInput('codigoVara', form),
+				processo: queryInput('processo', form),
+				tipo: querySelect('idTipoAcao', form),
+				nomeAutor: queryInput('nomeAutor', form),
+				docAutor: queryInput('cpfCnpjAutor', form),
+				docReu: query('#cpfCnpj'),
+				reus: querySelect('reus', form),
+				maybeValor: Success(queryInput('valorUnico', form).toMaybe()),
+			})
+		)
+		.map(elementos => {
+			const { juiz, vara, processo, tipo, nomeAutor, maybeValor, idVara } = elementos;
+			[juiz, vara, processo, tipo, nomeAutor, ...maybeValor.fold(() => [], Array.of)].forEach(
+				campo => {
+					campo.required = true;
 				}
+			);
+
+			idVara.addEventListener('change', sincronizar);
+			sincronizar();
+
+			observarPreferencia(juiz, Preferencias.JUIZ);
+			observarPreferencia(vara, Preferencias.VARA);
+
+			const template = document.createElement('template');
+			template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;" hidden>Aguarde, carregando...</div>`;
+			const div = document.importNode(template.content, true).firstChild as HTMLDivElement;
+			document.body.appendChild(div);
+			processo.addEventListener('change', () => {
+				div.style.display = 'grid';
+
+				setTimeout(() => {
+					div.style.display = 'none';
+				}, 1000);
+			});
+
+			function sincronizar() {
+				if (idVara.value) vara.value = idVara.value;
 			}
-		);
+		});
 
 	function observarPreferencia(input: HTMLInputElement, preferencia: Preferencias) {
 		preferencias.observar(preferencia, maybe => {
@@ -1167,17 +1150,18 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
 }
 
 function dologin(preferencias: PreferenciasObject): Validation<void> {
-	return queryValidation<HTMLFormElement>('form')
+	return query<HTMLFormElement>('form')
 		.chain(form =>
 			sequenceAO(Validation, {
 				form: Success(form),
-				unidade: queryInput('unidade')(form),
-				operador: queryInput('operador')(form),
-				senha: queryInput('senha')(form),
-				opcoesLogin: queryCampo<RadioNodeList>('opcao_login')(form),
+				unidade: queryInput('unidade', form),
+				operador: queryInput('operador', form),
+				senha: queryInput('senha', form),
+				opcoesLogin: queryRadio('opcao_login', form),
 			})
 		)
-		.map(({ form, unidade, operador, senha, opcoesLogin }) => {
+		.map(elementos => {
+			const { form, unidade, operador, senha, opcoesLogin } = elementos;
 			observarPreferencia(unidade, Preferencias.UNIDADE);
 			observarPreferencia(operador, Preferencias.OPERADOR);
 
@@ -1304,40 +1288,39 @@ function queryAll<T extends Element>(selector: string, context: NodeSelector = d
 	return Array.from(context.querySelectorAll<T>(selector));
 }
 
-function queryCampo<T extends Element | RadioNodeList = HTMLInputElement>(
-	nome: string
-): (form: HTMLFormElement) => Validation<T> {
-	return form =>
-		new Validation((Failure, Success) => {
-			const elt = form.elements.namedItem(nome) as T | null;
-			return elt === null ? Failure([`Campo não encontrado: "${nome}".`]) : Success(elt);
-		});
+function queryCampo<T extends Element | RadioNodeList>(
+	nome: string,
+	form: HTMLFormElement
+): Validation<T> {
+	return new Validation((Failure, Success) => {
+		const elt = form.elements.namedItem(nome) as T | null;
+		return elt === null ? Failure([`Campo não encontrado: "${nome}".`]) : Success(elt);
+	});
 }
 
-function queryInput(name: string): (form: HTMLFormElement) => Validation<HTMLInputElement> {
-	return form =>
-		new Validation((Failure, Success) => {
-			const elt = form.querySelector<HTMLInputElement>(`input[name="${name}"]`);
-			return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
-		});
+function queryRadio(nome: string, form: HTMLFormElement): Validation<RadioNodeList> {
+	return queryCampo<RadioNodeList>(nome, form);
 }
 
-function querySelect(name: string): (form: HTMLFormElement) => Validation<HTMLSelectElement> {
-	return form =>
-		new Validation((Failure, Success) => {
-			const elt = form.querySelector<HTMLSelectElement>(`select[name="${name}"]`);
-			return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
-		});
+function queryInput(nome: string, form: HTMLFormElement): Validation<HTMLInputElement> {
+	return queryCampo<HTMLInputElement>(nome, form);
+}
+
+function querySelect(nome: string, form: HTMLFormElement): Validation<HTMLSelectElement> {
+	return queryCampo<HTMLSelectElement>(nome, form);
 }
 
 function queryMaybe<T extends Element>(
 	selector: string,
 	context: NodeSelector = document
 ): Maybe<T> {
-	return Maybe.fromNullable(context.querySelector<T>(selector));
+	return new Maybe((Nothing, Just) => {
+		const elt = context.querySelector<T>(selector);
+		return elt === null ? Nothing() : Just(elt);
+	});
 }
 
-function queryValidation<T extends Element>(
+function query<T extends Element>(
 	selector: string,
 	context: NodeSelector = document
 ): Validation<T> {
@@ -1369,13 +1352,45 @@ function sequenceAO<A extends Applicative, O>(A: A, obj: O): SequenceAOResult<A,
 	);
 }
 
+function queryErros(): Validation<void> {
+	return new Validation((Failure, Success) => {
+		const erros = queryAll('.msgErro')
+			.map(erro => {
+				const elt = erro.cloneNode(true) as Element;
+				elt.innerHTML = elt.innerHTML
+					.replace(/\n?•(\&nbsp;)?/g, '')
+					.replace('<b>', '&ldquo;')
+					.replace('</b>', '&rdquo;');
+				return (elt.textContent || '').trim();
+			})
+			.filter(x => x !== '');
+		return erros.length > 0 ? Failure(erros) : Success(undefined);
+	});
+}
+
+function whenDocumentInteractive(): Promise<void> {
+	return new Promise(res => {
+		if (document.readyState === 'loading') {
+			document.addEventListener('readystatechange', onReadyStateChange);
+		} else {
+			res();
+		}
+		function onReadyStateChange() {
+			if (document.readyState !== 'loading') {
+				document.removeEventListener('readystatechange', onReadyStateChange);
+				res();
+			}
+		}
+	});
+}
+
 // Constantes
 
 type Resultado = Validation<void>;
 const Paginas = new Map<string, (preferencias: PreferenciasObject, pagina: string) => Resultado>([
 	['dologin', dologin],
-	['conferirDadosMinutaBVInclusao', criarMinutaBVInclusao],
-	['conferirDadosMinutaSIInclusao', criarMinutaBVInclusao],
+	['conferirDadosMinutaBVInclusao', conferirDadosMinutaBVInclusao],
+	['conferirDadosMinutaSIInclusao', conferirDadosMinutaBVInclusao],
 	['criarMinutaBVInclusao', criarMinutaBVInclusao],
 	['criarMinutaSIInclusao', criarMinutaBVInclusao],
 ]);
