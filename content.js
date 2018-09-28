@@ -4,15 +4,21 @@ async function main() {
     await whenDocumentInteractive();
     analisarPagina(preferencias);
 }
-Array.prototype.filterMap = function (f) {
+Array.prototype.filterMap = function filterMap(f) {
     const ys = [];
     this.forEach(x => f(x).fold(() => { }, y => ys.push(y)));
     return ys;
 };
-Array.prototype.partitionMap = function (f) {
+Array.prototype.partitionMap = function partitionMap(f) {
     const result = { left: [], right: [] };
     this.forEach(x => f(x).fold(l => result.left.push(l), r => result.right.push(r)));
     return result;
+};
+Array.prototype.sequenceA = function sequenceA(A) {
+    return this.traverse(A, x => x);
+};
+Array.prototype.traverse = function traverse(A, f) {
+    return this.reduce((axs, x) => f(x).ap(axs.map((xs) => (x) => (xs.push(x), xs))), A.of([]));
 };
 // Classes
 /**
@@ -854,6 +860,9 @@ class Validation {
     map(f) {
         return this.fold(Failure, x => Success(f(x)));
     }
+    toMaybe() {
+        return new Maybe((Nothing, Just) => this.fold(Nothing, Just));
+    }
     static fail(error) {
         return Failure([error]);
     }
@@ -873,10 +882,15 @@ function analisarPagina(preferencias) {
     const pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
     const acao = Paginas.get(pagina);
     if (acao) {
-        const result = acao(preferencias, pagina);
-        result.fold(errors => {
-            console.log('Erro(s) encontrado(s):', errors);
-        }, () => { });
+        try {
+            const result = acao(preferencias, pagina);
+            result.fold(errors => {
+                console.log('Erro(s) encontrado(s):', errors);
+            }, () => { });
+        }
+        catch (error) {
+            console.error(error);
+        }
     }
     else {
         console.log('Página desconhecida:', pagina);
@@ -924,21 +938,30 @@ async function carregarPreferencias() {
     };
 }
 function criarMinutaBVInclusao(preferencias) {
-    return liftA2(queryValidation('form'), queryValidation('#cpfCnpj'), (form, cpfCnpj) => {
-        const queryCampo = queryCampoFactory(form.elements);
-        return liftA3(liftA4(Success(form), queryCampo('cdOperadorJuiz'), queryCampo('idVara'), queryCampo('codigoVara'), (form, juiz, idVara, vara) => ({ form, juiz, idVara, vara })), liftA4(queryCampo('processo'), queryCampo('idTipoAcao'), queryCampo('nomeAutor'), queryCampo('cpfCnpjAutor'), (processo, tipo, nomeAutor, docAutor) => ({ processo, tipo, nomeAutor, docAutor })), liftA3(Success(cpfCnpj), queryCampo('reus'), Success(queryCampo('valorUnico').fold(() => Nothing, Just)), (docReu, reus, maybeValor) => ({ docReu, reus, maybeValor })), (a, b, c) => Object.assign({}, a, b, c));
+    return queryValidation('form')
+        .chain(form => {
+        const qI = (name) => queryInput(name)(form);
+        const qS = (name) => querySelect(name)(form);
+        return sequenceAO(Validation, {
+            form: Success(form),
+            juiz: qI('cdOperadorJuiz'),
+            idVara: qS('idVara'),
+            vara: qI('codigoVara'),
+            processo: qI('processo'),
+            tipo: qS('idTipoAcao'),
+            nomeAutor: qI('nomeAutor'),
+            docAutor: qI('cpfCnpjAutor'),
+            docReu: queryValidation('#cpfCnpj'),
+            reus: qS('reus'),
+            maybeValor: Success(qI('valorUnico').toMaybe()),
+        });
     })
-        .chain(x => x)
         .map(({ form, juiz, idVara, vara, processo, tipo, nomeAutor, docAutor, docReu, reus, maybeValor, }) => {
-        campoRequerido(juiz);
-        campoRequerido(vara);
-        campoRequerido(processo);
-        campoRequerido(tipo);
-        campoRequerido(nomeAutor);
-        maybeValor.ifJust(campoRequerido);
-        idVara.addEventListener('change', onIdVaraChange);
-        if (idVara.value)
-            onIdVaraChange();
+        [juiz, vara, processo, tipo, nomeAutor, ...maybeValor.fold(() => [], Array.of)].forEach(campo => {
+            campo.required = true;
+        });
+        idVara.addEventListener('change', sincronizar);
+        sincronizar();
         observarPreferencia(juiz, "juiz" /* JUIZ */);
         observarPreferencia(vara, "vara" /* VARA */);
         const template = document.createElement('template');
@@ -953,8 +976,9 @@ function criarMinutaBVInclusao(preferencias) {
                 div.style.display = 'none';
             });
         });
-        function onIdVaraChange() {
-            vara.value = idVara.value;
+        function sincronizar() {
+            if (idVara.value)
+                vara.value = idVara.value;
         }
     });
     function observarPreferencia(input, preferencia) {
@@ -966,45 +990,43 @@ function criarMinutaBVInclusao(preferencias) {
             });
         });
     }
-    function campoRequerido(campo) {
-        campo.required = true;
-    }
 }
 function dologin(preferencias) {
-    return queryValidation('form').chain(form => {
-        const queryCampo = queryCampoFactory(form.elements);
-        const vUnidade = queryCampo('unidade');
-        const vOperador = queryCampo('operador');
-        const vSenha = queryCampo('senha');
-        const vOpcoesLogin = queryCampo('opcao_login');
-        return liftA4(vUnidade, vOperador, vSenha, vOpcoesLogin, (unidade, operador, senha, opcoesLogin) => {
-            const observarPreferencia = observarPreferenciaFactory(preferencias);
-            observarPreferencia(unidade, "unidade" /* UNIDADE */);
-            observarPreferencia(operador, "operador" /* OPERADOR */);
-            form.addEventListener('submit', () => {
-                preencherSeVazio(unidade, "unidade" /* UNIDADE */);
-                preencherSeVazio(operador, "operador" /* OPERADOR */);
-            });
-            opcoesLogin.forEach(opcao => {
-                opcao.addEventListener('click', verificarFoco);
-            });
-            window.addEventListener('load', verificarFoco);
-            function focarCampoSemPreferencia() {
-                focarSePreferenciaVazia(unidade, "unidade" /* UNIDADE */, () => focarSePreferenciaVazia(operador, "operador" /* OPERADOR */, () => {
-                    senha.focus();
-                }));
-            }
-            function verificarFoco() {
-                if (opcoesLogin.value === 'operador') {
-                    setTimeout(focarCampoSemPreferencia, 100);
-                }
-            }
+    return queryValidation('form')
+        .chain(form => sequenceAO(Validation, {
+        form: Success(form),
+        unidade: queryInput('unidade')(form),
+        operador: queryInput('operador')(form),
+        senha: queryInput('senha')(form),
+        opcoesLogin: queryCampo('opcao_login')(form),
+    }))
+        .map(({ form, unidade, operador, senha, opcoesLogin }) => {
+        observarPreferencia(unidade, "unidade" /* UNIDADE */);
+        observarPreferencia(operador, "operador" /* OPERADOR */);
+        form.addEventListener('submit', () => {
+            preencherSeVazio(unidade, "unidade" /* UNIDADE */);
+            preencherSeVazio(operador, "operador" /* OPERADOR */);
         });
+        opcoesLogin.forEach(opcao => {
+            opcao.addEventListener('click', verificarFoco);
+        });
+        window.addEventListener('load', verificarFoco);
+        function focarNaoPreenchido() {
+            focarSePreferenciaVazia(unidade, "unidade" /* UNIDADE */, () => focarSePreferenciaVazia(operador, "operador" /* OPERADOR */, () => senha.focus()));
+        }
+        function verificarFoco() {
+            if (opcoesLogin.value === 'operador') {
+                setTimeout(focarNaoPreenchido, 0);
+            }
+        }
     });
+    function observarPreferencia(input, preferencia) {
+        preferencias.observar(preferencia, maybe => {
+            input.setAttribute('placeholder', maybe.getOrElse(''));
+        });
+    }
     function focarSePreferenciaVazia(input, preferencia, senao) {
-        preferencias.get(preferencia).fold(() => {
-            input.focus();
-        }, senao);
+        preferencias.get(preferencia).fold(() => input.focus(), () => senao());
     }
     function preencherSeVazio(input, preferencia) {
         if (input.value === '') {
@@ -1046,22 +1068,35 @@ function padLeft(size, number) {
 function queryAll(selector, context = document) {
     return Array.from(context.querySelectorAll(selector));
 }
-function queryCampoFactory(collection) {
-    return function queryCampo(nome) {
-        const elt = collection.namedItem(nome);
-        if (elt === null)
-            return Validation.fail(`Campo não encontrado: "${nome}".`);
-        return Success(elt);
-    };
+function queryCampo(nome) {
+    return form => new Validation((Failure, Success) => {
+        const elt = form.elements.namedItem(nome);
+        return elt === null ? Failure([`Campo não encontrado: "${nome}".`]) : Success(elt);
+    });
+}
+function queryInput(name) {
+    return form => new Validation((Failure, Success) => {
+        const elt = form.querySelector(`input[name="${name}"]`);
+        return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
+    });
+}
+function querySelect(name) {
+    return form => new Validation((Failure, Success) => {
+        const elt = form.querySelector(`select[name="${name}"]`);
+        return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
+    });
 }
 function queryMaybe(selector, context = document) {
     return Maybe.fromNullable(context.querySelector(selector));
 }
 function queryValidation(selector, context = document) {
-    const elt = context.querySelector(selector);
-    return elt === null
-        ? Validation.fail(`Elemento não encontrado: '${selector}'.`)
-        : Validation.of(elt);
+    return new Validation((Failure, Success) => {
+        const elt = context.querySelector(selector);
+        return elt === null ? Failure([`Elemento não encontrado: '${selector}'.`]) : Success(elt);
+    });
+}
+function sequenceAO(A, obj) {
+    return Object.keys(obj).reduce((result, key) => obj[key].ap(result.map((dest) => (source) => Object.assign(dest, { [key]: source }))), A.of({}));
 }
 const Paginas = new Map([
     ['dologin', dologin],

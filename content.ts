@@ -10,6 +10,9 @@ interface Apply<A> {
 	ap<B>(that: Apply<(_: A) => B>): Apply<B>;
 	map<B>(f: (_: A) => B): Apply<B>;
 }
+interface Applicative {
+	of<A>(value: A): Apply<A>;
+}
 interface Semigroup {
 	concat(that: Semigroup): Semigroup;
 }
@@ -24,16 +27,29 @@ interface Array<T> {
 	concat(that: Array<T>): Array<T>;
 	filterMap<U>(f: (_: T) => Maybe<U>): Array<U>;
 	partitionMap<L, U>(f: (_: T) => Either<L, U>): { left: Array<L>; right: Array<U> };
+	sequenceA<U>(this: Array<Validation<U>>, A: typeof Validation): Validation<Array<U>>;
+	sequenceA<U>(this: Array<Apply<U>>, A: Applicative): Apply<Array<U>>;
+	traverse<U>(A: typeof Validation, f: (_: T) => Validation<U>): Validation<Array<U>>;
+	traverse<U>(A: Applicative, f: (_: T) => Apply<U>): Apply<Array<U>>;
 }
-Array.prototype.filterMap = function(f) {
+Array.prototype.filterMap = function filterMap(f) {
 	const ys = [] as any[];
 	this.forEach(x => f(x).fold(() => {}, y => ys.push(y)));
 	return ys;
 };
-Array.prototype.partitionMap = function(f) {
+Array.prototype.partitionMap = function partitionMap(f) {
 	const result = { left: [] as any[], right: [] as any[] };
 	this.forEach(x => f(x).fold(l => result.left.push(l), r => result.right.push(r)));
 	return result;
+};
+Array.prototype.sequenceA = function sequenceA(A: any) {
+	return this.traverse(A, x => x);
+};
+Array.prototype.traverse = function traverse(A: any, f: Function) {
+	return this.reduce(
+		(axs, x) => f(x).ap(axs.map((xs: any[]) => (x: any) => (xs.push(x), xs))),
+		A.of([])
+	);
 };
 
 // Classes
@@ -967,6 +983,9 @@ class Validation<A> {
 	map<B>(f: (_: A) => B): Validation<B> {
 		return this.fold(Failure, x => Success(f(x)));
 	}
+	toMaybe(): Maybe<A> {
+		return new Maybe((Nothing, Just) => this.fold(Nothing, Just));
+	}
 
 	static fail<A = never>(error: string): Validation<A> {
 		return Failure([error]);
@@ -989,13 +1008,17 @@ function analisarPagina(preferencias: PreferenciasObject) {
 	const pagina = url.pathname.split('/bacenjud2/')[1].split('.')[0];
 	const acao = Paginas.get(pagina);
 	if (acao) {
-		const result = acao(preferencias, pagina);
-		result.fold(
-			errors => {
-				console.log('Erro(s) encontrado(s):', errors);
-			},
-			() => {}
-		);
+		try {
+			const result = acao(preferencias, pagina);
+			result.fold(
+				errors => {
+					console.log('Erro(s) encontrado(s):', errors);
+				},
+				() => {}
+			);
+		} catch (error) {
+			console.error(error);
+		}
 	} else {
 		console.log('Página desconhecida:', pagina);
 	}
@@ -1067,38 +1090,25 @@ async function carregarPreferencias(): Promise<PreferenciasObject> {
 }
 
 function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
-	return liftA2(
-		queryValidation<HTMLFormElement>('form'),
-		queryValidation('#cpfCnpj'),
-		(form, cpfCnpj) => {
-			const queryCampo = queryCampoFactory(form.elements);
+	return queryValidation<HTMLFormElement>('form')
+		.chain(form => {
+			const qI = (name: string) => queryInput(name)(form);
+			const qS = (name: string) => querySelect(name)(form);
 
-			return liftA3(
-				liftA4(
-					Success(form),
-					queryCampo('cdOperadorJuiz'),
-					queryCampo('idVara'),
-					queryCampo('codigoVara'),
-					(form, juiz, idVara, vara) => ({ form, juiz, idVara, vara })
-				),
-				liftA4(
-					queryCampo('processo'),
-					queryCampo<HTMLSelectElement>('idTipoAcao'),
-					queryCampo('nomeAutor'),
-					queryCampo('cpfCnpjAutor'),
-					(processo, tipo, nomeAutor, docAutor) => ({ processo, tipo, nomeAutor, docAutor })
-				),
-				liftA3(
-					Success(cpfCnpj),
-					queryCampo<HTMLSelectElement>('reus'),
-					Success(queryCampo('valorUnico').fold(() => Nothing, Just)),
-					(docReu, reus, maybeValor) => ({ docReu, reus, maybeValor })
-				),
-				(a, b, c) => Object.assign({}, a, b, c)
-			);
-		}
-	)
-		.chain(x => x)
+			return sequenceAO(Validation, {
+				form: Success(form),
+				juiz: qI('cdOperadorJuiz'),
+				idVara: qS('idVara'),
+				vara: qI('codigoVara'),
+				processo: qI('processo'),
+				tipo: qS('idTipoAcao'),
+				nomeAutor: qI('nomeAutor'),
+				docAutor: qI('cpfCnpjAutor'),
+				docReu: queryValidation('#cpfCnpj'),
+				reus: qS('reus'),
+				maybeValor: Success(qI('valorUnico').toMaybe()),
+			});
+		})
 		.map(
 			({
 				form,
@@ -1113,16 +1123,18 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
 				reus,
 				maybeValor,
 			}) => {
-				campoRequerido(juiz);
-				campoRequerido(vara);
-				campoRequerido(processo);
-				campoRequerido(tipo);
-				campoRequerido(nomeAutor);
-				maybeValor.ifJust(campoRequerido);
-				idVara.addEventListener('change', onIdVaraChange);
-				if (idVara.value) onIdVaraChange();
+				[juiz, vara, processo, tipo, nomeAutor, ...maybeValor.fold(() => [], Array.of)].forEach(
+					campo => {
+						campo.required = true;
+					}
+				);
+
+				idVara.addEventListener('change', sincronizar);
+				sincronizar();
+
 				observarPreferencia(juiz, Preferencias.JUIZ);
 				observarPreferencia(vara, Preferencias.VARA);
+
 				const template = document.createElement('template');
 				template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;" hidden>Aguarde, carregando...</div>`;
 				const div = document.importNode(template.content, true).firstChild as HTMLDivElement;
@@ -1137,8 +1149,8 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
 					});
 				});
 
-				function onIdVaraChange() {
-					vara.value = idVara.value;
+				function sincronizar() {
+					if (idVara.value) vara.value = idVara.value;
 				}
 			}
 		);
@@ -1152,65 +1164,57 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject) {
 			});
 		});
 	}
-
-	function campoRequerido(campo: HTMLInputElement | HTMLSelectElement): void {
-		campo.required = true;
-	}
 }
 
 function dologin(preferencias: PreferenciasObject): Validation<void> {
-	return queryValidation<HTMLFormElement>('form').chain(form => {
-		const queryCampo = queryCampoFactory(form.elements);
+	return queryValidation<HTMLFormElement>('form')
+		.chain(form =>
+			sequenceAO(Validation, {
+				form: Success(form),
+				unidade: queryInput('unidade')(form),
+				operador: queryInput('operador')(form),
+				senha: queryInput('senha')(form),
+				opcoesLogin: queryCampo<RadioNodeList>('opcao_login')(form),
+			})
+		)
+		.map(({ form, unidade, operador, senha, opcoesLogin }) => {
+			observarPreferencia(unidade, Preferencias.UNIDADE);
+			observarPreferencia(operador, Preferencias.OPERADOR);
 
-		const vUnidade = queryCampo('unidade');
-		const vOperador = queryCampo('operador');
-		const vSenha = queryCampo('senha');
-		const vOpcoesLogin = queryCampo<RadioNodeList>('opcao_login');
+			form.addEventListener('submit', () => {
+				preencherSeVazio(unidade, Preferencias.UNIDADE);
+				preencherSeVazio(operador, Preferencias.OPERADOR);
+			});
+			opcoesLogin.forEach(opcao => {
+				opcao.addEventListener('click', verificarFoco);
+			});
+			window.addEventListener('load', verificarFoco);
 
-		return liftA4(
-			vUnidade,
-			vOperador,
-			vSenha,
-			vOpcoesLogin,
-			(unidade, operador, senha, opcoesLogin) => {
-				const observarPreferencia = observarPreferenciaFactory(preferencias);
+			function focarNaoPreenchido() {
+				focarSePreferenciaVazia(unidade, Preferencias.UNIDADE, () =>
+					focarSePreferenciaVazia(operador, Preferencias.OPERADOR, () => senha.focus())
+				);
+			}
 
-				observarPreferencia(unidade, Preferencias.UNIDADE);
-				observarPreferencia(operador, Preferencias.OPERADOR);
-				form.addEventListener('submit', () => {
-					preencherSeVazio(unidade, Preferencias.UNIDADE);
-					preencherSeVazio(operador, Preferencias.OPERADOR);
-				});
-				opcoesLogin.forEach(opcao => {
-					opcao.addEventListener('click', verificarFoco);
-				});
-				window.addEventListener('load', verificarFoco);
-
-				function focarCampoSemPreferencia() {
-					focarSePreferenciaVazia(unidade, Preferencias.UNIDADE, () =>
-						focarSePreferenciaVazia(operador, Preferencias.OPERADOR, () => {
-							senha.focus();
-						})
-					);
-				}
-
-				function verificarFoco() {
-					if (opcoesLogin.value === 'operador') {
-						setTimeout(focarCampoSemPreferencia, 100);
-					}
+			function verificarFoco() {
+				if (opcoesLogin.value === 'operador') {
+					setTimeout(focarNaoPreenchido, 0);
 				}
 			}
-		);
-	});
+		});
+
+	function observarPreferencia(input: HTMLInputElement, preferencia: Preferencias) {
+		preferencias.observar(preferencia, maybe => {
+			input.setAttribute('placeholder', maybe.getOrElse(''));
+		});
+	}
 
 	function focarSePreferenciaVazia(
 		input: HTMLInputElement,
 		preferencia: Preferencias,
 		senao: () => void
 	): void {
-		preferencias.get(preferencia).fold(() => {
-			input.focus();
-		}, senao);
+		preferencias.get(preferencia).fold(() => input.focus(), () => senao());
 	}
 
 	function preencherSeVazio(input: HTMLInputElement, preferencia: Preferencias): void {
@@ -1300,14 +1304,30 @@ function queryAll<T extends Element>(selector: string, context: NodeSelector = d
 	return Array.from(context.querySelectorAll<T>(selector));
 }
 
-function queryCampoFactory(collection: HTMLFormControlsCollection) {
-	return function queryCampo<T extends Element | RadioNodeList = HTMLInputElement>(
-		nome: string
-	): Validation<T> {
-		const elt = collection.namedItem(nome) as T | null;
-		if (elt === null) return Validation.fail(`Campo não encontrado: "${nome}".`);
-		return Success(elt);
-	};
+function queryCampo<T extends Element | RadioNodeList = HTMLInputElement>(
+	nome: string
+): (form: HTMLFormElement) => Validation<T> {
+	return form =>
+		new Validation((Failure, Success) => {
+			const elt = form.elements.namedItem(nome) as T | null;
+			return elt === null ? Failure([`Campo não encontrado: "${nome}".`]) : Success(elt);
+		});
+}
+
+function queryInput(name: string): (form: HTMLFormElement) => Validation<HTMLInputElement> {
+	return form =>
+		new Validation((Failure, Success) => {
+			const elt = form.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+			return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
+		});
+}
+
+function querySelect(name: string): (form: HTMLFormElement) => Validation<HTMLSelectElement> {
+	return form =>
+		new Validation((Failure, Success) => {
+			const elt = form.querySelector<HTMLSelectElement>(`select[name="${name}"]`);
+			return elt === null ? Failure([`Campo não encontrado: "${name}".`]) : Success(elt);
+		});
 }
 
 function queryMaybe<T extends Element>(
@@ -1321,10 +1341,32 @@ function queryValidation<T extends Element>(
 	selector: string,
 	context: NodeSelector = document
 ): Validation<T> {
-	const elt = context.querySelector<T>(selector);
-	return elt === null
-		? Validation.fail(`Elemento não encontrado: '${selector}'.`)
-		: Validation.of(elt);
+	return new Validation((Failure, Success) => {
+		const elt = context.querySelector<T>(selector);
+		return elt === null ? Failure([`Elemento não encontrado: '${selector}'.`]) : Success(elt);
+	});
+}
+
+interface Matches {
+	Validation: typeof Validation;
+	Maybe: typeof Maybe;
+}
+type GetMatch<A> = { [k in keyof Matches]: A extends Matches[k] ? k : never }[keyof Matches];
+type Fallback<T> = T extends never ? 'Applicative' : T;
+interface SequenceAOResults<O> {
+	Applicative: Apply<{ [k in keyof O]: O[k] extends Apply<infer T> ? T : never }>;
+	Validation: Validation<{ [k in keyof O]: O[k] extends Validation<infer T> ? T : never }>;
+	Maybe: Maybe<{ [k in keyof O]: O[k] extends Maybe<infer T> ? T : never }>;
+}
+type SequenceAOResult<A, O> = SequenceAOResults<O>[Fallback<GetMatch<A>>];
+function sequenceAO<A extends Applicative, O>(A: A, obj: O): SequenceAOResult<A, O> {
+	return Object.keys(obj).reduce(
+		(result, key) =>
+			(obj as any)[key].ap(
+				result.map((dest: any) => (source: any) => Object.assign(dest, { [key]: source }))
+			),
+		A.of({}) as any
+	);
 }
 
 // Constantes
