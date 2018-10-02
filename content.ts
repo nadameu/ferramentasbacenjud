@@ -26,6 +26,7 @@ type ResultadoNumproc =
 interface Array<T> {
 	concat(that: Array<T>): Array<T>;
 	filterMap<U>(f: (_: T) => Maybe<U>): Array<U>;
+	partition(p: (_: T) => boolean): { yes: Array<T>; no: Array<T> };
 	partitionMap<L, U>(f: (_: T) => Either<L, U>): { left: Array<L>; right: Array<U> };
 	sequenceA<U>(this: Array<Validation<U>>, A: typeof Validation): Validation<Array<U>>;
 	sequenceA<U>(this: Array<Apply<U>>, A: Applicative): Apply<Array<U>>;
@@ -36,6 +37,10 @@ Array.prototype.filterMap = function filterMap(f) {
 	const ys = [] as any[];
 	this.forEach(x => f(x).fold(() => {}, y => ys.push(y)));
 	return ys;
+};
+Array.prototype.partition = function partition(p) {
+	const { left, right } = this.partitionMap(x => (p(x) ? Right(x) : Left(x)));
+	return { yes: right, no: left };
 };
 Array.prototype.partitionMap = function partitionMap(f) {
 	const result = { left: [] as any[], right: [] as any[] };
@@ -833,6 +838,12 @@ class Maybe<A> {
 	ifNothing(f: () => void): void {
 		this.fold(f, () => {});
 	}
+	isJust(): boolean {
+		return this.fold(() => false, () => true);
+	}
+	isNothing(): boolean {
+		return this.fold(() => true, () => false);
+	}
 	map<B>(f: (_: A) => B): Maybe<B> {
 		return this.chain(x => Just(f(x)));
 	}
@@ -962,6 +973,9 @@ class Validation<A> {
 	toMaybe(): Maybe<A> {
 		return new Maybe((Nothing, Just) => this.fold(Nothing, Just));
 	}
+	toPromise(): Promise<A> {
+		return new Promise((res, rej) => this.fold(rej, res));
+	}
 
 	static fail<A = never>(error: string): Validation<A> {
 		return Failure([error]);
@@ -978,6 +992,35 @@ function Success<A>(value: A): Validation<A> {
 }
 
 // Funções
+
+function adicionarCheckboxLembrar(preferencias: PreferenciasObject) {
+	const template = document.createElement('template');
+	template.innerHTML = `<label> <input type="checkbox"> Lembrar</label><br>`;
+	return function({ input, preferencia }: { input: HTMLInputElement; preferencia: Preferencias }) {
+		const fragment = document.importNode(template.content, true);
+		const checkbox = fragment.querySelector('input') as HTMLInputElement;
+		checkbox.checked = preferencias.get(preferencia).isJust();
+		checkbox.addEventListener('change', salvarPreferencia);
+		input.addEventListener('change', salvarPreferencia);
+		let next = input.nextSibling;
+		if (next && next.nodeType === Node.TEXT_NODE && (next.textContent || '').match(/^\s*$/)) {
+			const empty = next;
+			next = next.nextSibling;
+			(empty.parentNode as Node).removeChild(empty);
+		}
+		(input.parentNode as Node).insertBefore(fragment, input.nextSibling);
+		return salvarPreferencia;
+
+		function salvarPreferencia() {
+			(checkbox.checked && input.value
+				? preferencias.set(preferencia, input.value)
+				: preferencias.remove(preferencia)
+			).catch(error => {
+				console.error(error);
+			});
+		}
+	};
+}
 
 function analisarPagina(preferencias: PreferenciasObject) {
 	const url = new URL(location.href);
@@ -1007,6 +1050,7 @@ interface PreferenciasObject {
 	remove(name: Preferencias): Promise<void>;
 }
 const enum Preferencias {
+	CPF = 'cpf',
 	JUIZ = 'juiz',
 	OPERADOR = 'operador',
 	UNIDADE = 'unidade',
@@ -1016,19 +1060,9 @@ const enum Preferencias {
 }
 async function carregarPreferencias(): Promise<PreferenciasObject> {
 	const preferencias = new Map<Preferencias, string>(
-		await (browser.storage.local.get([
-			Preferencias.JUIZ,
-			Preferencias.OPERADOR,
-			Preferencias.UNIDADE,
-			Preferencias.SECAO,
-			Preferencias.SUBSECAO,
-			Preferencias.VARA,
-		]) as Promise<{ [k in Preferencias]: string | undefined }>).then(
-			prefs =>
-				Object.entries(prefs).filter(
-					(pair): pair is [Preferencias, string] => pair[1] !== undefined
-				) as [Preferencias, string][]
-		)
+		await browser.storage.local
+			.get()
+			.then(prefs => Object.entries(prefs) as [Preferencias, string][])
 	);
 
 	const listeners = new Map<Preferencias, ((_: Maybe<string>) => void)[]>();
@@ -1104,33 +1138,95 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject): Validation<voi
 				docAutor: queryInput('cpfCnpjAutor', form),
 				docReu: query('#cpfCnpj'),
 				reus: querySelect('reus', form),
-				maybeValor: Success(queryInput('valorUnico', form).toMaybe()),
 			})
 		)
 		.map(elementos => {
-			const { juiz, vara, processo, tipo, nomeAutor, maybeValor, idVara } = elementos;
-			[juiz, vara, processo, tipo, nomeAutor, ...maybeValor.fold(() => [], Array.of)].forEach(
-				campo => {
-					campo.required = true;
-				}
-			);
+			const { form, juiz, vara, processo, tipo, nomeAutor, idVara } = elementos;
 
-			idVara.addEventListener('change', sincronizar);
+			[juiz, vara, processo, tipo, nomeAutor]
+				.concat(queryAll('input[name="valorUnico"]', form))
+				.forEach(campo => {
+					campo.required = true;
+				});
+
+			const adicionar = adicionarCheckboxLembrar(preferencias);
+			Maybe.of({ input: juiz, preferencia: Preferencias.JUIZ })
+				.filter(({ input }) => input.type !== 'hidden')
+				.ifJust(adicionar);
+			const salvarVara = adicionar({ input: vara, preferencia: Preferencias.VARA });
+
+			idVara.addEventListener('change', () => {
+				sincronizar();
+				salvarVara();
+			});
 			sincronizar();
 
-			observarPreferencia(juiz, Preferencias.JUIZ);
-			observarPreferencia(vara, Preferencias.VARA);
+			preencherSeVazio(juiz, Preferencias.JUIZ);
+			preencherSeVazio(vara, Preferencias.VARA);
+
+			const substituir = new Map([['d', '[0-9]'], ['.', '\\.?'], ['-', '-?']]);
+			processo.pattern = ['dd.dd.ddddd-d', 'dddd.dd.dd.dddddd-d', 'ddddddd-dd.dddd.d.dd.dddd']
+				.map(pattern =>
+					pattern.replace(/(\?*)(d*)(\?*)/g, (_, opt1, req, opt2) => {
+						const optional = opt1.length + opt2.length;
+						const required = req.length;
+						const total = optional + required;
+						if (total === 0) return '';
+						if (total === 1) {
+							if (required) return 'd';
+							return 'd?';
+						}
+						if (optional === 0) {
+							return `d{${required}}`;
+						}
+						return `d{${required},${total}}`;
+					})
+				)
+				.map(pattern => pattern.replace(/./g, x => substituir.get(x) || x))
+				.join('|');
+			processo.title =
+				'Digite o número do processo com 10, 15 ou 20 dígitos (pontos e traços opcionais)';
+
+			focarSeVazio([juiz, vara, processo]);
 
 			const template = document.createElement('template');
-			template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;" hidden>Aguarde, carregando...</div>`;
+			template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;">Aguarde, carregando...</div>`;
 			const div = document.importNode(template.content, true).firstChild as HTMLDivElement;
 			document.body.appendChild(div);
-			processo.addEventListener('change', () => {
-				div.style.display = 'grid';
+			let evitarSubmit = true;
+			processo.addEventListener('change', evt => {
+				if (!processo.willValidate) {
+					return;
+				}
+				Promise.resolve()
+					.then(() => {
+						evitarSubmit = true;
+						div.style.display = 'grid';
+					})
+					.then(() => obterDadosProcesso(processo.value, 'SC'))
+					.then(({ numproc, codClasse, valCausa, autores, reus }) => {
+						processo.value = numproc;
 
-				setTimeout(() => {
-					div.style.display = 'none';
-				}, 1000);
+						const tipoAcaoPorCodClasse = new Map([
+							['000229', '1'],
+							['000098', '1'],
+							['000099', '4'],
+						]);
+					})
+					.catch(err => {
+						console.error(err);
+						alert('Não foi possível obter os dados do processo.');
+					})
+					.then(() => {
+						evitarSubmit = false;
+						div.style.display = 'none';
+					});
+			});
+
+			form.addEventListener('submit', evt => {
+				if (evitarSubmit) {
+					evt.preventDefault();
+				}
 			});
 
 			function sincronizar() {
@@ -1138,13 +1234,11 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject): Validation<voi
 			}
 		});
 
-	function observarPreferencia(input: HTMLInputElement, preferencia: Preferencias) {
-		preferencias.observar(preferencia, maybe => {
-			maybe.ifJust(value => {
-				if (input.value === '') {
-					input.value = value;
-				}
-			});
+	function preencherSeVazio(input: HTMLInputElement, preferencia: Preferencias) {
+		preferencias.get(preferencia).ifJust(value => {
+			if (input.value === '') {
+				input.value = value;
+			}
 		});
 	}
 }
@@ -1154,56 +1248,64 @@ function dologin(preferencias: PreferenciasObject): Validation<void> {
 		.chain(form =>
 			sequenceAO(Validation, {
 				form: Success(form),
+				opcoesLogin: queryRadio('opcao_login', form),
 				unidade: queryInput('unidade', form),
 				operador: queryInput('operador', form),
 				senha: queryInput('senha', form),
-				opcoesLogin: queryRadio('opcao_login', form),
+				cpf: queryInput('cpf', form),
 			})
 		)
 		.map(elementos => {
-			const { form, unidade, operador, senha, opcoesLogin } = elementos;
-			observarPreferencia(unidade, Preferencias.UNIDADE);
-			observarPreferencia(operador, Preferencias.OPERADOR);
+			const { form, opcoesLogin, unidade, operador, senha, cpf } = elementos;
 
-			form.addEventListener('submit', () => {
-				preencherSeVazio(unidade, Preferencias.UNIDADE);
-				preencherSeVazio(operador, Preferencias.OPERADOR);
-			});
+			[unidade, operador, senha, cpf]
+				.concat(queryAll('input[name="senhanova"], input[name="senhanova2"]', form))
+				.forEach(input => {
+					input.required = true;
+				});
+
+			[
+				{ input: unidade, preferencia: Preferencias.UNIDADE },
+				{ input: operador, preferencia: Preferencias.OPERADOR },
+				{ input: cpf, preferencia: Preferencias.CPF },
+			].forEach(adicionarCheckboxLembrar(preferencias));
+
 			opcoesLogin.forEach(opcao => {
 				opcao.addEventListener('click', verificarFoco);
 			});
 			window.addEventListener('load', verificarFoco);
+			if (document.readyState === 'complete') verificarFoco();
 
-			function focarNaoPreenchido() {
-				focarSePreferenciaVazia(unidade, Preferencias.UNIDADE, () =>
-					focarSePreferenciaVazia(operador, Preferencias.OPERADOR, () => senha.focus())
-				);
+			function preencher() {
+				preencherSeVazio(unidade, Preferencias.UNIDADE);
+				preencherSeVazio(operador, Preferencias.OPERADOR);
+				preencherSeVazio(cpf, Preferencias.CPF);
+				focarSeVazio([unidade, operador, cpf, senha]);
 			}
 
 			function verificarFoco() {
-				if (opcoesLogin.value === 'operador') {
-					setTimeout(focarNaoPreenchido, 0);
-				}
+				const isOperador = opcoesLogin.value === 'operador';
+				unidade.disabled = !isOperador;
+				operador.disabled = !isOperador;
+				cpf.disabled = isOperador;
+				setTimeout(preencher, 0);
 			}
 		});
 
-	function observarPreferencia(input: HTMLInputElement, preferencia: Preferencias) {
-		preferencias.observar(preferencia, maybe => {
-			input.setAttribute('placeholder', maybe.getOrElse(''));
+	function preencherSeVazio(input: HTMLInputElement, preferencia: Preferencias): void {
+		preferencias.get(preferencia).ifJust(value => {
+			if (input.value === '') {
+				input.value = value;
+			}
 		});
 	}
+}
 
-	function focarSePreferenciaVazia(
-		input: HTMLInputElement,
-		preferencia: Preferencias,
-		senao: () => void
-	): void {
-		preferencias.get(preferencia).fold(() => input.focus(), () => senao());
-	}
-
-	function preencherSeVazio(input: HTMLInputElement, preferencia: Preferencias): void {
-		if (input.value === '') {
-			input.value = preferencias.get(preferencia).getOrElse('');
+function focarSeVazio(inputs: HTMLInputElement[]): void {
+	for (const input of inputs) {
+		if (!input.disabled && input.value === '') {
+			input.focus();
+			return;
 		}
 	}
 }
@@ -1274,6 +1376,85 @@ function observarPreferenciaFactory(preferencias: PreferenciasObject) {
 			input.setAttribute('placeholder', maybe.getOrElse(''));
 		});
 	};
+}
+
+async function obterDadosProcesso(numproc: string, estado: 'PR' | 'RS' | 'SC') {
+	// WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
+	const response = await fetch(
+		'https://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php',
+		{
+			method: 'POST',
+			headers: new Headers({
+				SOAPAction: 'consulta_processual_ws_wsdl#ws_consulta_processo',
+			}),
+			body: `<?xml version="1.0" encoding="UTF-8"?>
+		<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+				<soapenv:Header/>
+				<soapenv:Body>
+						<num_proc>${numproc}</num_proc>
+						<uf>${estado}</uf>
+						<todas_fases>N</todas_fases>
+						<todas_partes>S</todas_partes>
+						<todos_valores>N</todos_valores>
+				</soapenv:Body>
+		</soapenv:Envelope>`,
+		}
+	);
+	if (!response.ok) {
+		console.error(response);
+		throw new Error('Não foi possível obter os dados do processo.');
+	}
+	const text = await response.text();
+	const parser = new DOMParser();
+	const processo = await Promise.resolve(text)
+		.then(txt => parser.parseFromString(txt, 'text/xml') as XMLDocument)
+		.then(doc => query('return', doc).toPromise())
+		.then(ret => ret.textContent || '')
+		.then(ret => parser.parseFromString(ret, 'text/xml') as XMLDocument);
+
+	const erros = queryAll('Erro', processo)
+		.map(erro => erro.textContent || '')
+		.filter(texto => texto.trim() !== '');
+	if (erros.length) {
+		return Promise.reject(erros);
+	}
+
+	type InfoParte = { nome: string; documento: Maybe<string> };
+	type InfoPartes = { autores: InfoParte[]; reus: InfoParte[] };
+	const { autores, reus } = queryAll('Partes Parte', processo).reduce(
+		(partes, parte) => {
+			const ehAutor = obterTexto(queryMaybe('Autor', parte), 'N') === 'S';
+			const ehReu = obterTexto(queryMaybe('Réu, Reu', parte), 'N') === 'S';
+			if (ehAutor === ehReu) return partes;
+			const nome = obterTexto(queryMaybe('Nome', parte));
+			const documento = obterTexto(queryMaybe('CPF_CGC', parte));
+			return nome
+				.map(nome => ((ehAutor ? partes.autores : partes.reus).push({ nome, documento }), partes))
+				.getOrElse(partes);
+		},
+		{ autores: [], reus: [] } as InfoPartes
+	);
+	return sequenceAO(Maybe, {
+		numproc: obterTexto(queryMaybe('Processo Processo', processo)),
+		codClasse: obterTexto(queryMaybe('CodClasse', processo)),
+	})
+		.map(({ numproc, codClasse }) => ({
+			numproc,
+			codClasse,
+			valCausa: obterTexto(queryMaybe('ValCausa', processo))
+				.map(Number)
+				.filter(x => !isNaN(x)),
+			autores,
+			reus,
+		}))
+		.fold(() => Promise.reject(), x => Promise.resolve(x));
+
+	function obterTexto(p: Maybe<Node>): Maybe<string>;
+	function obterTexto(p: Maybe<Node>, defaultValue: string): string;
+	function obterTexto(p: Maybe<Node>, defaultValue?: string) {
+		const maybe = p.mapNullable(x => x.textContent).filter(x => x.trim() !== '');
+		return defaultValue === undefined ? maybe : maybe.getOrElse(defaultValue);
+	}
 }
 
 function padLeft(size: number, number: number): string {
@@ -1366,6 +1547,42 @@ function queryErros(): Validation<void> {
 			.filter(x => x !== '');
 		return erros.length > 0 ? Failure(erros) : Success(undefined);
 	});
+}
+
+function validarNumeroProcesso(
+	input: string,
+	secao: Maybe<string>,
+	subsecao: Maybe<string>
+): ResultadoNumproc {
+	const numproc = input.replace(/[^0-9\/]/g, '');
+	if (/^(\d{2}|\d{4})\/\d{2,9}$/.test(numproc)) {
+		const [anoDigitado, numeroDigitado] = numproc.split('/');
+		let ano = Number(anoDigitado);
+		if (ano < 50) {
+			ano = ano + 2000;
+		} else if (ano >= 50 && ano < 100) {
+			ano = ano + 1900;
+		}
+		const qtdDigitosVerificadores = ano >= 2010 ? 2 : 1;
+		const numero = Number(numeroDigitado.slice(0, numeroDigitado.length - qtdDigitosVerificadores));
+		const ramo = '4';
+		const tribunal = '04';
+		return liftA2(secao, subsecao, (secao, subsecao) => {
+			const r1 = Number(numero) % 97;
+			const r2 = Number([r1, ano, ramo, tribunal].join('')) % 97;
+			const r3 = Number([r2, secao, subsecao, '00'].join('')) % 97;
+			let dv = padLeft(2, 98 - r3);
+			return [padLeft(7, numero), dv, ano, ramo, tribunal, secao, subsecao].join('');
+		})
+			.map(valor => ({ ok: true, valor } as ResultadoNumproc))
+			.getOrElse({ ok: false, motivo: 'erroSecaoSubsecao' });
+	} else if (numproc.match('/')) {
+		return { ok: false, motivo: 'erroDigitacaoAbreviada', valorInformado: input };
+	} else if ([10, 15, 20].includes(numproc.length)) {
+		return { ok: true, valor: numproc };
+	} else {
+		return { ok: false, motivo: 'erroDigitacao', valorInformado: input };
+	}
 }
 
 function whenDocumentInteractive(): Promise<void> {
