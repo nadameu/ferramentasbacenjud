@@ -8,15 +8,15 @@
     }
     div {
       display: grid;
-      grid-template-columns: 60% 20% 20%;
+      grid-template-columns: 3fr 1fr 1fr;
     }
     label {
       grid-column: 1 / 2;
     }
-    input {
+    input, select {
       grid-column: 2 / 4;
     }
-    input.short {
+    input.short, select.short {
       grid-column: 2 / 3;
     }
   </style>
@@ -44,12 +44,22 @@
     <input type="text" id="vara" maxlength="5">
   </div>
   <div>
-    <label for="secao">Código da Seção (ex.: 0000001-00.2011.4.04.__08)</label>
-    <input type="text" id="secao" class="short" maxlength="2">
+    <label for="secao">Origem do processo</label>
+    <select id="secao" class="short">
+      <option value=""></option>
+      <option value="TRF4">TRF4</option>
+      <option value="PR">JFPR</option>
+      <option value="RS">JFRS</option>
+      <option value="SC">JFSC</option>
+    </select>
   </div>
   <div>
-    <label for="subsecao">Código da Seção (ex.: 0000001-00.2011.4.04.72__)</label>
-    <input type="text" id="subsecao" class="short" maxlength="2">
+    <label for="inverter">Inverter autor/réu</label>
+    <select id="inverter" class="short">
+      <option value=""></option>
+      <option value="S">Sim</option>
+      <option value="N">Não</option>
+    </select>
   </div>
 
   <script src="options.js"></script>

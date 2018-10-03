@@ -1,5 +1,7 @@
 // Salvar as alterações
-const inputs = Array.from(document.getElementsByTagName('input'));
+const inputs = Array.from(
+	document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select')
+);
 inputs.forEach(input => {
 	input.addEventListener('change', () => {
 		const promise =
@@ -10,7 +12,9 @@ inputs.forEach(input => {
 	});
 });
 
-const inputsById = new Map(inputs.map(input => [input.id, input] as [string, HTMLInputElement]));
+const inputsById = new Map(
+	inputs.map(input => [input.id, input] as [string, HTMLInputElement | HTMLSelectElement])
+);
 
 // Observar mudanças feitas em outras páginas
 browser.storage.onChanged.addListener((changes, areaName) => {
@@ -25,11 +29,14 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 });
 
 // Carregar os valores salvos
-browser.storage.local.get(Array.from(inputsById.keys())).then(prefs => {
-	Object.keys(prefs).forEach(key => {
-		const input = inputsById.get(key);
-		if (input) {
-			input.value = prefs[key];
-		}
-	});
-});
+browser.storage.local
+	.get(Array.from(inputsById.keys()))
+	.then(prefs => {
+		Object.keys(prefs).forEach(key => {
+			const input = inputsById.get(key);
+			if (input) {
+				input.value = prefs[key];
+			}
+		});
+	})
+	.catch(err => console.error(err));

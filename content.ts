@@ -955,6 +955,110 @@ class QueryError extends Error {
 	}
 }
 
+class Task<E, A> {
+	constructor(
+		private readonly _fork: (rej: (_: E) => void, res: (_: A) => void) => void | (() => void)
+	) {}
+
+	alt(that: Task<E, A>): Task<E, A> {
+		return new Task((rej, res) => {
+			let done = false;
+			let cancelThat: () => void = () => {};
+			const cancelThis = this.fork(
+				guard((e: E) => {
+					cancelThat();
+					rej(e);
+				}),
+				guard((x: A) => {
+					cancelThat();
+					res(x);
+				})
+			);
+			if (done) return;
+			cancelThat = that.fork(
+				guard((e: E) => {
+					cancelThis();
+					rej(e);
+				}),
+				guard((x: A) => {
+					cancelThis();
+					res(x);
+				})
+			);
+			return guard(() => {
+				cancelThis();
+				cancelThat();
+			});
+
+			function guard(f: () => void): () => void;
+			function guard<T>(f: (_: T) => void): (_: T) => void;
+			function guard<T>(f: (_: T) => void): (_: T) => void {
+				return x => {
+					if (done) return;
+					done = true;
+					f(x);
+				};
+			}
+		});
+	}
+	chain<B>(f: (_: A) => Task<E, B>): Task<E, B> {
+		return new Task((rej, res) => {
+			let cancelInner: () => void = () => {};
+			const cancel = this.fork(rej, x => {
+				cancelInner = f(x).fork(rej, res);
+			});
+			return () => {
+				cancelInner();
+				cancel();
+			};
+		});
+	}
+	chainLeft<B>(f: (_: E) => Task<B, A>): Task<B, A> {
+		return new Task((rej, res) => {
+			let cancelInner: () => void = () => {};
+			const cancel = this.fork(e => {
+				cancelInner = f(e).fork(rej, res);
+			}, res);
+			return () => {
+				cancelInner();
+				cancel();
+			};
+		});
+	}
+	fork(whenRejected: (reason: E) => void, whenResolved: (value: A) => void): () => void {
+		let done = false;
+		const cancel = this._fork(guard(whenRejected), guard(whenResolved)) || (() => {});
+
+		return guard(cancel);
+
+		function guard(f: () => void): () => void;
+		function guard<T>(f: (_: T) => void): (_: T) => void;
+		function guard(f: Function) {
+			return (x: any) => {
+				if (done) return;
+				done = true;
+				f(x);
+			};
+		}
+	}
+	map<B>(f: (_: A) => B): Task<E, B> {
+		return new Task((rej, res) => this.fork(rej, (x: A) => res(f(x))));
+	}
+	mapLeft<B>(f: (_: E) => B): Task<B, A> {
+		return new Task((rej, res) => this.fork((e: E) => rej(f(e)), res));
+	}
+
+	static fromPromiseThunk<A, E = any>(thunk: () => Promise<A>): Task<E, A> {
+		return new Task((rej, res) => void thunk().then(res, rej));
+	}
+	static of<A, E = never>(value: A): Task<E, A> {
+		return new Task((_, res) => res(value));
+	}
+	static rejected<E, A = never>(reason: E): Task<E, A> {
+		return new Task(rej => rej(reason));
+	}
+}
+
 class Validation<A> {
 	constructor(readonly fold: <B>(Failure: (_: string[]) => B, Success: (_: A) => B) => B) {}
 	ap<B>(that: Validation<(_: A) => B>): Validation<B> {
@@ -975,6 +1079,9 @@ class Validation<A> {
 	}
 	toPromise(): Promise<A> {
 		return new Promise((res, rej) => this.fold(rej, res));
+	}
+	toTask(): Task<string[], A> {
+		return new Task((rej, res) => this.fold(rej, res));
 	}
 
 	static fail<A = never>(error: string): Validation<A> {
@@ -1052,10 +1159,10 @@ interface PreferenciasObject {
 const enum Preferencias {
 	CPF = 'cpf',
 	JUIZ = 'juiz',
+	INVERTER = 'inverter',
 	OPERADOR = 'operador',
-	UNIDADE = 'unidade',
 	SECAO = 'secao',
-	SUBSECAO = 'subsecao',
+	UNIDADE = 'unidade',
 	VARA = 'vara',
 }
 async function carregarPreferencias(): Promise<PreferenciasObject> {
@@ -1099,9 +1206,9 @@ async function carregarPreferencias(): Promise<PreferenciasObject> {
 	};
 }
 
-function conferirDadosMinutaBVInclusao(preferencias: PreferenciasObject): Validation<void> {
+function conferirDadosMinutaInclusao(preferencias: PreferenciasObject): Validation<void> {
 	return queryErros().fold(
-		() => criarMinutaBVInclusao(preferencias),
+		() => criarMinutaInclusao(preferencias),
 		() =>
 			query<HTMLFormElement>('form')
 				.chain(form =>
@@ -1124,7 +1231,74 @@ function conferirDadosMinutaBVInclusao(preferencias: PreferenciasObject): Valida
 	);
 }
 
-function criarMinutaBVInclusao(preferencias: PreferenciasObject): Validation<void> {
+function consultarPessoa(_: PreferenciasObject): Validation<void> {
+	window.addEventListener('keyup', evt => {
+		if (evt.keyCode === KeyCode.ESCAPE) {
+			opener.focus();
+			window.close();
+		}
+	});
+	window.addEventListener('unload', () => {
+		opener.postMessage({ acao: 'incluirReu' }, location.origin);
+	});
+	return Success(undefined);
+}
+
+function consultarPorAssessor(preferencias: PreferenciasObject): Validation<void> {
+	return query<HTMLFormElement>('form')
+		.chain(form =>
+			sequenceAO(Validation, {
+				juiz: queryInput('cdOperadorJuiz', form),
+				assessor: queryInput('cdOperadorAssessor', form),
+			})
+		)
+		.map(({ juiz, assessor }) => {
+			juiz.value = preferencias.get(Preferencias.JUIZ).getOrElse('');
+			assessor.value = preferencias.get(Preferencias.OPERADOR).getOrElse('');
+		});
+}
+
+function consultarPorJuizo(preferencias: PreferenciasObject): Validation<void> {
+	return query<HTMLFormElement>('form')
+		.chain(form =>
+			sequenceAO(Validation, {
+				vara: queryInput('codigoVara', form),
+				juiz: queryInput('operador', form),
+			})
+		)
+		.map(({ vara, juiz }) => {
+			vara.value = preferencias.get(Preferencias.VARA).getOrElse('');
+			juiz.value = preferencias.get(Preferencias.JUIZ).getOrElse('');
+		});
+}
+
+function consultarPorProcesso(preferencias: PreferenciasObject): Validation<void> {
+	return query<HTMLFormElement>('form')
+		.chain(form => queryInput('numeroProcesso', form))
+		.map(input => {
+			input.required = true;
+			input.pattern = '[0-9]{10}|[0-9]{15}|[0-9]{20}';
+			input.title = 'Digite o número do processo com 10, 15 ou 20 dígitos';
+			input.addEventListener('change', () => {
+				input.value = input.value.trim().replace(/\D/g, '');
+			});
+			input.focus();
+		});
+}
+
+function consultarPorProtocolo(_: PreferenciasObject): Validation<void> {
+	return query<HTMLFormElement>('form')
+		.chain(form => queryInput('numeroProtocolo', form))
+		.map(input => {
+			input.required = true;
+			input.pattern = '[0-9]{14}';
+			input.title = 'Digite o número do protocolo (14 dígitos)';
+			input.select();
+			input.focus();
+		});
+}
+
+function criarMinutaInclusao(preferencias: PreferenciasObject): Validation<void> {
 	return query<HTMLFormElement>('form')
 		.chain(form =>
 			sequenceAO(Validation, {
@@ -1136,15 +1310,28 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject): Validation<voi
 				tipo: querySelect('idTipoAcao', form),
 				nomeAutor: queryInput('nomeAutor', form),
 				docAutor: queryInput('cpfCnpjAutor', form),
-				docReu: query('#cpfCnpj'),
+				docReu: query<HTMLInputElement>('input#cpfCnpj'),
 				reus: querySelect('reus', form),
+				maybeValor: Success(queryInput('valorUnico', form).toMaybe()),
 			})
 		)
 		.map(elementos => {
-			const { form, juiz, vara, processo, tipo, nomeAutor, idVara } = elementos;
+			const {
+				form,
+				juiz,
+				idVara,
+				vara,
+				processo,
+				tipo,
+				nomeAutor,
+				docAutor,
+				docReu,
+				reus,
+				maybeValor,
+			} = elementos;
 
 			[juiz, vara, processo, tipo, nomeAutor]
-				.concat(queryAll('input[name="valorUnico"]', form))
+				.concat(maybeValor.fold(() => [], x => [x]))
 				.forEach(campo => {
 					campo.required = true;
 				});
@@ -1163,6 +1350,73 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject): Validation<voi
 
 			preencherSeVazio(juiz, Preferencias.JUIZ);
 			preencherSeVazio(vara, Preferencias.VARA);
+
+			const templateOrigem = document.createElement('template');
+			templateOrigem.innerHTML = `<tr class="fundoPadraoAClaro2">
+	<td class="nomeCampo">* Origem:</td>
+	<td>
+		<select title="Selecione a origem do processo" required>
+			<option value=""></option>
+			<option value="TRF">TRF4</option>
+			<option value="RS">JFRS</option>
+			<option value="SC">JFSC</option>
+			<option value="PR">JFPR</option>
+		</select>
+	</td>
+</tr>`;
+			const trOrigem = document.importNode(templateOrigem.content, true);
+			const origem = trOrigem.querySelector('select') as HTMLSelectElement;
+			origem.value = preferencias.get(Preferencias.SECAO).getOrElse('');
+			origem.addEventListener('change', () => {
+				Maybe.of(origem.value)
+					.filter(x => x !== '')
+					.fold(
+						() => preferencias.remove(Preferencias.SECAO),
+						value => {
+							if (tentativaBuscarDados) {
+								buscarDados();
+							}
+							return preferencias.set(Preferencias.SECAO, value);
+						}
+					)
+					.catch(error => console.error(error));
+			});
+
+			const templateInverter = document.createElement('template');
+			templateInverter.innerHTML = `<tr class="fundoPadraoAClaro2">
+	<td class="nomeCampo">* Inverter autor/réu:</td>
+	<td>
+		<select title="Informe se o exequente se encontra no polo passivo do processo" required>
+			<option value=""></option>
+			<option value="S">Sim</option>
+			<option value="N">Não</option>
+		</select>
+	</td>
+</tr>`;
+			const trInverter = document.importNode(templateInverter.content, true);
+			const inverter = trInverter.querySelector('select') as HTMLSelectElement;
+			inverter.value = preferencias.get(Preferencias.INVERTER).getOrElse('');
+			inverter.addEventListener('change', () => {
+				Maybe.of(inverter.value)
+					.filter(x => x !== '')
+					.fold(
+						() => preferencias.remove(Preferencias.INVERTER),
+						value => {
+							if (tentativaBuscarDados) {
+								buscarDados();
+							}
+							return preferencias.set(Preferencias.INVERTER, value);
+						}
+					)
+					.catch(error => console.error(error));
+			});
+
+			const trProcesso = Maybe.fromNullable(processo.closest('tr'));
+			trProcesso.ifJust(tr => {
+				const parent = tr.parentNode as Node;
+				parent.insertBefore(trOrigem, tr);
+				parent.insertBefore(trInverter, tr);
+			});
 
 			const substituir = new Map([['d', '[0-9]'], ['.', '\\.?'], ['-', '-?']]);
 			processo.pattern = ['dd.dd.ddddd-d', 'dddd.dd.dd.dddddd-d', 'ddddddd-dd.dddd.d.dd.dddd']
@@ -1187,47 +1441,125 @@ function criarMinutaBVInclusao(preferencias: PreferenciasObject): Validation<voi
 			processo.title =
 				'Digite o número do processo com 10, 15 ou 20 dígitos (pontos e traços opcionais)';
 
-			focarSeVazio([juiz, vara, processo]);
+			focarSeVazio([juiz, vara, origem, inverter, processo]);
 
 			const template = document.createElement('template');
 			template.innerHTML = `<div id="blocking" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 50%); display: none; font-size: 10vmin; color: white; justify-content: center; align-items: center; cursor: default;">Aguarde, carregando...</div>`;
-			const div = document.importNode(template.content, true).firstChild as HTMLDivElement;
-			document.body.appendChild(div);
-			let evitarSubmit = true;
-			processo.addEventListener('change', evt => {
-				if (!processo.willValidate) {
-					return;
-				}
-				Promise.resolve()
-					.then(() => {
-						evitarSubmit = true;
-						div.style.display = 'grid';
-					})
-					.then(() => obterDadosProcesso(processo.value, 'SC'))
-					.then(({ numproc, codClasse, valCausa, autores, reus }) => {
-						processo.value = numproc;
+			const blocking = document.importNode(template.content, true).firstChild as HTMLDivElement;
+			document.body.appendChild(blocking);
 
-						const tipoAcaoPorCodClasse = new Map([
-							['000229', '1'],
-							['000098', '1'],
-							['000099', '4'],
-						]);
-					})
-					.catch(err => {
-						console.error(err);
-						alert('Não foi possível obter os dados do processo.');
-					})
-					.then(() => {
-						evitarSubmit = false;
-						div.style.display = 'none';
-					});
-			});
+			const templateBotaoBuscar = document.createElement('template');
+			templateBotaoBuscar.innerHTML = `&nbsp;<input type="button" class="botao" value="Buscar dados do processo">`;
+			const fragBuscar = document.importNode(templateBotaoBuscar.content, true);
+			const botaoBuscar = fragBuscar.querySelector('input') as HTMLInputElement;
+			botaoBuscar.addEventListener('click', buscarDados);
+			(processo.parentNode as Node).insertBefore(fragBuscar, processo.nextSibling);
+
+			let buscando = false;
+			let tentativaBuscarDados = false;
+			processo.addEventListener('change', buscarDados);
 
 			form.addEventListener('submit', evt => {
-				if (evitarSubmit) {
+				if (buscando) {
 					evt.preventDefault();
 				}
 			});
+
+			function buscarDados() {
+				if (buscando) return;
+				if ([origem, inverter, processo].find(input => !input.validity.valid)) {
+					tentativaBuscarDados = true;
+					form.reportValidity();
+					return;
+				}
+				tentativaBuscarDados = false;
+				buscando = true;
+				blocking.style.display = 'grid';
+				obterDadosProcesso(processo.value, origem.value as any)
+					.alt(
+						new Task(rej => {
+							const timer = setTimeout(() => rej(['Conexão demorou demais para responder.']), 5000);
+							return () => clearTimeout(timer);
+						})
+					)
+					.map(({ numproc, codClasse, valCausa, autores: infoAutores, reus: infoReus }) => {
+						processo.value = numproc.replace(/\D/g, '');
+
+						const tipoAcaoPorCodClasse = new Map([
+							['000098', '1'],
+							['000099', '4'],
+							['000169', '1'],
+							['000229', '1'],
+						]);
+						tipo.value = Maybe.fromNullable(tipoAcaoPorCodClasse.get(codClasse)).getOrElse('');
+
+						const infoAutor = Maybe.fromNullable(
+							inverter.value === 'S' ? infoReus[0] : infoAutores[0]
+						).getOrElse({
+							nome: '',
+							documento: Just(''),
+						});
+						nomeAutor.value = infoAutor.nome;
+						docAutor.value = infoAutor.documento.getOrElse('');
+
+						maybeValor.ifJust(input => {
+							input.value = valCausa
+								.map(val =>
+									val.toLocaleString('pt-BR', {
+										style: 'decimal',
+										minimumIntegerDigits: 1,
+										minimumFractionDigits: 2,
+										maximumFractionDigits: 2,
+									})
+								)
+								.getOrElse('');
+						});
+
+						Array.from(reus.options).forEach(option => {
+							option.selected = true;
+						});
+						if (reus.options.length > 0) {
+							if (reus.title.match(/réu/)) {
+								window.wrappedJSObject.excluirReu();
+							} else {
+								window.wrappedJSObject.excluirPessoa();
+							}
+						}
+						const docsReus = (inverter.value === 'S' ? infoAutores : infoReus).filterMap(
+							({ documento }) => documento
+						);
+						let indiceReu = 0;
+						window.addEventListener('message', ({ data, origin }) => {
+							if (origin !== location.origin) return;
+							if ('acao' in data && data.acao === 'incluirReu') {
+								if (indiceReu >= docsReus.length) return;
+								const reu = docsReus[indiceReu++];
+								docReu.value = reu;
+								window.wrappedJSObject.abreConsultarCpfCnpjPopUp();
+							}
+						});
+						window.postMessage({ acao: 'incluirReu' }, location.origin);
+					})
+					.chainLeft(errors => {
+						console.error(errors);
+						alert(errors.join('\n'));
+						return Task.of(undefined);
+					})
+					.fork(
+						() => {},
+						() => {
+							buscando = false;
+							blocking.style.display = 'none';
+							const algumFocado = focarSeVazio([juiz, vara, tipo, nomeAutor, docAutor]);
+							maybeValor.ifJust(input => {
+								if (!algumFocado) {
+									input.select();
+									input.focus();
+								}
+							});
+						}
+					);
+			}
 
 			function sincronizar() {
 				if (idVara.value) vara.value = idVara.value;
@@ -1301,13 +1633,14 @@ function dologin(preferencias: PreferenciasObject): Validation<void> {
 	}
 }
 
-function focarSeVazio(inputs: HTMLInputElement[]): void {
+function focarSeVazio(inputs: (HTMLInputElement | HTMLSelectElement)[]): boolean {
 	for (const input of inputs) {
 		if (!input.disabled && input.value === '') {
 			input.focus();
-			return;
+			return true;
 		}
 	}
+	return false;
 }
 
 function formatNumber(num: number) {
@@ -1370,6 +1703,35 @@ function liftA4<A, B, C, D, E>(
 	return az.ap(ay.ap(ax.ap(aw.map((w: A) => (x: B) => (y: C) => (z: D) => f(w, x, y, z)))));
 }
 
+function incluirMinuta(tipoMinuta: 'BV' | 'SI'): Validation<void> {
+	const paginaInclusao = `criarMinuta${tipoMinuta}Inclusao.do?method=criar`;
+	const selector = 'table.fundoPadraoAClaro2 > tbody > tr:first-child > td:first-child';
+	return queryMaybe<HTMLTableCellElement>(selector)
+		.mapNullable(cell => cell.textContent)
+		.map(txt => txt.split(/\n/))
+		.mapNullable(xs => xs[2])
+		.map(txt => [txt, '', 'Deseja incluir nova minuta?'].join('\n'))
+		.map(msg => {
+			setTimeout(() => {
+				if (confirm(msg)) {
+					location.href = paginaInclusao;
+				}
+			}, 0);
+		})
+		.fold(
+			() => Validation.fail(`Não foi possível obter o resultado da inclusão.`),
+			() => Validation.of(undefined)
+		);
+}
+
+function incluirMinutaBV(_: PreferenciasObject): Validation<void> {
+	return incluirMinuta('BV');
+}
+
+function incluirMinutaSI(_: PreferenciasObject): Validation<void> {
+	return incluirMinuta('SI');
+}
+
 function observarPreferenciaFactory(preferencias: PreferenciasObject) {
 	return function observarPreferencia(input: HTMLInputElement, preferencia: Preferencias): void {
 		preferencias.observar(preferencia, maybe => {
@@ -1378,16 +1740,31 @@ function observarPreferenciaFactory(preferencias: PreferenciasObject) {
 	};
 }
 
-async function obterDadosProcesso(numproc: string, estado: 'PR' | 'RS' | 'SC') {
-	// WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
-	const response = await fetch(
-		'https://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php',
-		{
-			method: 'POST',
-			headers: new Headers({
-				SOAPAction: 'consulta_processual_ws_wsdl#ws_consulta_processo',
-			}),
-			body: `<?xml version="1.0" encoding="UTF-8"?>
+interface InfoParte {
+	nome: string;
+	documento: Maybe<string>;
+}
+interface InfoPartes {
+	autores: InfoParte[];
+	reus: InfoParte[];
+}
+interface InfoProcesso extends InfoPartes {
+	numproc: string;
+	codClasse: string;
+	valCausa: Maybe<number>;
+}
+function obterDadosProcesso(
+	numproc: string,
+	estado: 'PR' | 'RS' | 'SC' | 'TRF4'
+): Task<string[], InfoProcesso> {
+	return new Task<any, XMLDocument>((rej, res) => {
+		// WSDL: http://www.trf4.jus.br/trf4/processos/acompanhamento/ws_consulta_processual.php
+		const xhr = new XMLHttpRequest();
+		xhr.addEventListener('load', () => res(xhr.responseXML as XMLDocument));
+		xhr.addEventListener('error', rej);
+		xhr.open('POST', 'https://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php');
+		xhr.setRequestHeader('SOAPAction', 'consulta_processual_ws_wsdl#ws_consulta_processo');
+		xhr.send(`<?xml version="1.0" encoding="UTF-8"?>
 		<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
 				<soapenv:Header/>
 				<soapenv:Body>
@@ -1397,57 +1774,57 @@ async function obterDadosProcesso(numproc: string, estado: 'PR' | 'RS' | 'SC') {
 						<todas_partes>S</todas_partes>
 						<todos_valores>N</todos_valores>
 				</soapenv:Body>
-		</soapenv:Envelope>`,
-		}
-	);
-	if (!response.ok) {
-		console.error(response);
-		throw new Error('Não foi possível obter os dados do processo.');
-	}
-	const text = await response.text();
-	const parser = new DOMParser();
-	const processo = await Promise.resolve(text)
-		.then(txt => parser.parseFromString(txt, 'text/xml') as XMLDocument)
-		.then(doc => query('return', doc).toPromise())
-		.then(ret => ret.textContent || '')
-		.then(ret => parser.parseFromString(ret, 'text/xml') as XMLDocument);
-
-	const erros = queryAll('Erro', processo)
-		.map(erro => erro.textContent || '')
-		.filter(texto => texto.trim() !== '');
-	if (erros.length) {
-		return Promise.reject(erros);
-	}
-
-	type InfoParte = { nome: string; documento: Maybe<string> };
-	type InfoPartes = { autores: InfoParte[]; reus: InfoParte[] };
-	const { autores, reus } = queryAll('Partes Parte', processo).reduce(
-		(partes, parte) => {
-			const ehAutor = obterTexto(queryMaybe('Autor', parte), 'N') === 'S';
-			const ehReu = obterTexto(queryMaybe('Réu, Reu', parte), 'N') === 'S';
-			if (ehAutor === ehReu) return partes;
-			const nome = obterTexto(queryMaybe('Nome', parte));
-			const documento = obterTexto(queryMaybe('CPF_CGC', parte));
-			return nome
-				.map(nome => ((ehAutor ? partes.autores : partes.reus).push({ nome, documento }), partes))
-				.getOrElse(partes);
-		},
-		{ autores: [], reus: [] } as InfoPartes
-	);
-	return sequenceAO(Maybe, {
-		numproc: obterTexto(queryMaybe('Processo Processo', processo)),
-		codClasse: obterTexto(queryMaybe('CodClasse', processo)),
+		</soapenv:Envelope>`);
+		return () => xhr.abort();
 	})
-		.map(({ numproc, codClasse }) => ({
-			numproc,
-			codClasse,
-			valCausa: obterTexto(queryMaybe('ValCausa', processo))
-				.map(Number)
-				.filter(x => !isNaN(x)),
-			autores,
-			reus,
-		}))
-		.fold(() => Promise.reject(), x => Promise.resolve(x));
+		.chainLeft(() => Task.rejected(['Erro de rede.']))
+		.chain(doc => {
+			console.log(doc);
+			const parser = new DOMParser();
+			return query('return', doc)
+				.map(ret => ret.textContent || '')
+				.map(ret => parser.parseFromString(ret, 'text/xml') as XMLDocument)
+				.toTask();
+		})
+		.chainLeft(() => Task.rejected(['Erro ao obter os dados do processo.']))
+		.chain(processo => {
+			const erros = queryAll('Erro', processo)
+				.map(erro => erro.textContent || '')
+				.filter(texto => texto.trim() !== '');
+			if (erros.length) {
+				return Task.rejected(erros);
+			}
+
+			const { autores, reus } = queryAll('Partes Parte', processo).reduce(
+				(partes, parte) => {
+					const ehAutor = obterTexto(queryMaybe('Autor', parte), 'N') === 'S';
+					const ehReu = obterTexto(queryMaybe('Réu, Reu', parte), 'N') === 'S';
+					if (ehAutor === ehReu) return partes;
+					const nome = obterTexto(queryMaybe('Nome', parte));
+					const documento = obterTexto(queryMaybe('CPF_CGC', parte));
+					return nome
+						.map(
+							nome => ((ehAutor ? partes.autores : partes.reus).push({ nome, documento }), partes)
+						)
+						.getOrElse(partes);
+				},
+				{ autores: [], reus: [] } as InfoPartes
+			);
+			return sequenceAO(Maybe, {
+				numproc: obterTexto(queryMaybe('Processo Processo', processo)),
+				codClasse: obterTexto(queryMaybe('CodClasse', processo)),
+			})
+				.map(({ numproc, codClasse }) => ({
+					numproc,
+					codClasse,
+					valCausa: obterTexto(queryMaybe('ValCausa', processo))
+						.map(Number)
+						.filter(x => !isNaN(x)),
+					autores,
+					reus,
+				}))
+				.fold(() => Task.rejected(['Erro ao obter os dados do processo.']), x => Task.of(x));
+		});
 
 	function obterTexto(p: Maybe<Node>): Maybe<string>;
 	function obterTexto(p: Maybe<Node>, defaultValue: string): string;
@@ -1606,10 +1983,21 @@ function whenDocumentInteractive(): Promise<void> {
 type Resultado = Validation<void>;
 const Paginas = new Map<string, (preferencias: PreferenciasObject, pagina: string) => Resultado>([
 	['dologin', dologin],
-	['conferirDadosMinutaBVInclusao', conferirDadosMinutaBVInclusao],
-	['conferirDadosMinutaSIInclusao', conferirDadosMinutaBVInclusao],
-	['criarMinutaBVInclusao', criarMinutaBVInclusao],
-	['criarMinutaSIInclusao', criarMinutaBVInclusao],
+	['conferirDadosMinutaBVInclusao', conferirDadosMinutaInclusao],
+	['conferirDadosMinutaSIInclusao', conferirDadosMinutaInclusao],
+	['consultarPessoa', consultarPessoa],
+	['consultarReu', consultarPessoa],
+	['consultarSolicitacoesProtocoladasAssessor', consultarPorAssessor],
+	['consultarSolicitacoesProtocoladasJuizo', consultarPorJuizo],
+	['consultarSolicitacoesProtocoladasProcesso', consultarPorProcesso],
+	['consultarSolicitacoesProtocoladasProtocolo', consultarPorProtocolo],
+	['criarMinutaBVInclusao', criarMinutaInclusao],
+	['criarMinutaSIInclusao', criarMinutaInclusao],
+	['incluirMinutaBV', incluirMinutaBV],
+	['incluirMinutaSI', incluirMinutaSI],
+	['pesquisarPorJuizo', consultarPorJuizo],
+	['pesquisarPorProcesso', consultarPorProcesso],
+	['pesquisarPorProtocolo', consultarPorProtocolo],
 ]);
 
 main();
