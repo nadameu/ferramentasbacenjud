@@ -9,6 +9,8 @@
     div {
       display: grid;
       grid-template-columns: 3fr 1fr 1fr;
+      grid-gap: 0.5rem 0;
+      max-width: 75ex;
     }
     label {
       grid-column: 1 / 2;
@@ -26,34 +28,28 @@
   <div>
     <label for="unidade">Unidade do usuário (ex.: EJUAD)</label>
     <input type="text" id="unidade" maxlength="5">
-  </div>
-  <div>
+  
     <label for="operador">Login do usuário</label>
     <input type="text" id="operador" maxlength="10">
-  </div>
-  <div>
-    <label for="cpf">CPF do usuário (somente 9 dígitos)</label>
-    <input type="text" id="cpf" maxlength="9">
-  </div>
-  <div>
+  
     <label for="juiz">Login de Juiz a utilizar como padrão</label>
     <input type="text" id="juiz" maxlength="10">
-  </div>
-  <div>
+  
+    <label for="assessor">Login de assessor a utilizar como padrão</label>
+    <input type="text" id="assessor" maxlength="10">
+  
     <label for="vara">Código da Vara/Juízo no BacenJud</label>
     <input type="text" id="vara" maxlength="5">
-  </div>
-  <div>
-    <label for="secao">Origem do processo</label>
-    <select id="secao" class="short">
+  
+    <label for="origem">Origem do processo</label>
+    <select id="origem" class="short">
       <option value=""></option>
       <option value="TRF4">TRF4</option>
       <option value="PR">JFPR</option>
       <option value="RS">JFRS</option>
       <option value="SC">JFSC</option>
     </select>
-  </div>
-  <div>
+  
     <label for="inverter">Inverter autor/réu</label>
     <select id="inverter" class="short">
       <option value=""></option>
