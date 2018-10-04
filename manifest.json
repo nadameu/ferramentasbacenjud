@@ -34,12 +34,5 @@
 		"browser_style": false,
 		"page": "options.html"
 	},
-	"permissions": [
-		"activeTab",
-		"storage",
-		"tabs",
-		"https://www3.bcb.gov.br/bacenjud2/*",
-		"*://www.trf4.jus.br/*"
-	],
-	"web_accessible_resources": ["*.css", "*.svg"]
+	"permissions": ["storage", "https://www3.bcb.gov.br/bacenjud2/*", "https://www.trf4.jus.br/*"]
 }
