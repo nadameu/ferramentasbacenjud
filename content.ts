@@ -861,7 +861,7 @@ function obterDadosProcesso(
 		const xhr = new XMLHttpRequest();
 		xhr.addEventListener('load', () => res(xhr.responseXML as XMLDocument));
 		xhr.addEventListener('error', rej);
-		xhr.open('POST', 'https://www.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php');
+		xhr.open('POST', 'https://www2.trf4.jus.br/trf4/processos/acompanhamento/consultaws.php');
 		xhr.setRequestHeader('SOAPAction', 'consulta_processual_ws_wsdl#ws_consulta_processo');
 		xhr.send(`<?xml version="1.0" encoding="UTF-8"?>
 		<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
