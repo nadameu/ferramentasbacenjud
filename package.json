@@ -1,6 +1,6 @@
 {
 	"name": "ferramentasbacenjud",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Melhorias ao sistema BacenJud 2.0",
 	"private": true,
 	"scripts": {
