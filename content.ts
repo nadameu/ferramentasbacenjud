@@ -382,12 +382,14 @@ function consultarPorJuizo(preferencias: PreferenciasObject): Validation<void> {
 				juiz: queryInput('operador', form),
 				dataInicial: queryInput('dataInicial', form),
 				dataFinal: queryInput('dataFinal', form),
+				bloqueios: queryInput('idBloqueiosPendentes', form),
 			})
 		)
-		.map(({ idVara, vara, juiz, dataInicial, dataFinal }) => {
-			[vara, dataInicial, dataFinal].forEach(input => {
-				input.required = true;
-			});
+		.map(({ idVara, vara, juiz, dataInicial, dataFinal, bloqueios }) => {
+			vara.required = true;
+
+			bloqueios.addEventListener('change', sincronizarBloqueioDatas);
+			sincronizarBloqueioDatas();
 
 			const preencherSeVazio = preencherSeVazioFactory(preferencias);
 			preencherSeVazio(vara, Preferencias.VARA);
@@ -402,6 +404,13 @@ function consultarPorJuizo(preferencias: PreferenciasObject): Validation<void> {
 			sincronizar();
 
 			focarSeVazio([vara, juiz]);
+
+			function sincronizarBloqueioDatas() {
+				const obrigatorioPreencherDatas = !bloqueios.checked;
+				[dataInicial, dataFinal].forEach(input => {
+					input.required = obrigatorioPreencherDatas;
+				});
+			}
 		});
 }
 

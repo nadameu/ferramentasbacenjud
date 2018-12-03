@@ -320,11 +320,12 @@ function consultarPorJuizo(preferencias) {
         juiz: queryInput('operador', form),
         dataInicial: queryInput('dataInicial', form),
         dataFinal: queryInput('dataFinal', form),
+        bloqueios: queryInput('idBloqueiosPendentes', form),
     }))
-        .map(({ idVara, vara, juiz, dataInicial, dataFinal }) => {
-        [vara, dataInicial, dataFinal].forEach(input => {
-            input.required = true;
-        });
+        .map(({ idVara, vara, juiz, dataInicial, dataFinal, bloqueios }) => {
+        vara.required = true;
+        bloqueios.addEventListener('change', sincronizarBloqueioDatas);
+        sincronizarBloqueioDatas();
         const preencherSeVazio = preencherSeVazioFactory(preferencias);
         preencherSeVazio(vara, "vara" /* VARA */);
         preencherSeVazio(juiz, "juiz" /* JUIZ */);
@@ -335,6 +336,12 @@ function consultarPorJuizo(preferencias) {
         idVara.addEventListener('change', sincronizar);
         sincronizar();
         focarSeVazio([vara, juiz]);
+        function sincronizarBloqueioDatas() {
+            const obrigatorioPreencherDatas = !bloqueios.checked;
+            [dataInicial, dataFinal].forEach(input => {
+                input.required = obrigatorioPreencherDatas;
+            });
+        }
     });
 }
 function consultarPorProcesso(_) {
