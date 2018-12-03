@@ -765,6 +765,20 @@ function dologin(preferencias: PreferenciasObject): Validation<void> {
 	}
 }
 
+function exibirOrdemBloqueioValor(preferencias: PreferenciasObject): Validation<void> {
+	return query<HTMLFormElement>('form')
+		.chain(form => sequenceAO(Validation, { juiz: queryInput('operadorAutran', form) }))
+		.map(({ juiz }) => {
+			const adicionar = adicionarCheckboxLembrar(preferencias);
+			if (juiz.type !== 'hidden') {
+				adicionar(juiz, Preferencias.JUIZ);
+			}
+
+			const preencherSeVazio = preencherSeVazioFactory(preferencias);
+			preencherSeVazio(juiz, Preferencias.JUIZ);
+		});
+}
+
 function focarSeVazio(inputs: (HTMLInputElement | HTMLSelectElement)[]): boolean {
 	for (const input of inputs) {
 		if (!input.disabled && input.value === '') {
@@ -1065,6 +1079,7 @@ const Paginas = new Map<string, (preferencias: PreferenciasObject, pagina: strin
 	['consultarSolicitacoesProtocoladasProtocolo', consultarPorProtocolo],
 	['criarMinutaBVInclusao', criarMinutaInclusao],
 	['criarMinutaSIInclusao', criarMinutaInclusao],
+	['exibirOrdemBloqueioValor', exibirOrdemBloqueioValor],
 	['incluirMinutaBV', incluirMinutaBV],
 	['incluirMinutaSI', incluirMinutaSI],
 	['pesquisarPorAssessor', consultarPorAssessor],

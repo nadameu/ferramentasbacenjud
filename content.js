@@ -614,6 +614,18 @@ function dologin(preferencias) {
         };
     }
 }
+function exibirOrdemBloqueioValor(preferencias) {
+    return query('form')
+        .chain(form => sequenceAO(Validation, { juiz: queryInput('operadorAutran', form) }))
+        .map(({ juiz }) => {
+        const adicionar = adicionarCheckboxLembrar(preferencias);
+        if (juiz.type !== 'hidden') {
+            adicionar(juiz, "juiz" /* JUIZ */);
+        }
+        const preencherSeVazio = preencherSeVazioFactory(preferencias);
+        preencherSeVazio(juiz, "juiz" /* JUIZ */);
+    });
+}
 function focarSeVazio(inputs) {
     for (const input of inputs) {
         if (!input.disabled && input.value === '') {
@@ -801,6 +813,7 @@ const Paginas = new Map([
     ['consultarSolicitacoesProtocoladasProtocolo', consultarPorProtocolo],
     ['criarMinutaBVInclusao', criarMinutaInclusao],
     ['criarMinutaSIInclusao', criarMinutaInclusao],
+    ['exibirOrdemBloqueioValor', exibirOrdemBloqueioValor],
     ['incluirMinutaBV', incluirMinutaBV],
     ['incluirMinutaSI', incluirMinutaSI],
     ['pesquisarPorAssessor', consultarPorAssessor],
